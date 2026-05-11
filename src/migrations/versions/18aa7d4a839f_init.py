@@ -1,8 +1,8 @@
 """Init
 
-Revision ID: d3600f952b46
+Revision ID: 18aa7d4a839f
 Revises:
-Create Date: 2026-05-07 14:17:40.209549
+Create Date: 2026-05-11 15:51:40.486555
 
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "d3600f952b46"
+revision: str = "18aa7d4a839f"
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -29,11 +29,11 @@ def upgrade() -> None:
         sa.Column("password", sa.String(length=255), nullable=False),
         sa.Column("avatar", sa.String(), nullable=True),
         sa.Column(
-            "roles", sa.Enum("admin", "moderator", "user", name="role"), nullable=False
+            "role", sa.Enum("admin", "moderator", "user", name="role"), nullable=False
         ),
         sa.Column("confirmed", sa.Boolean(), nullable=False),
         sa.Column("blocked", sa.Boolean(), nullable=False),
-        sa.Column("create_at", sa.DateTime(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("email"),
@@ -60,7 +60,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("rf_token", sa.String(length=1024), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("create_at", sa.DateTime(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),

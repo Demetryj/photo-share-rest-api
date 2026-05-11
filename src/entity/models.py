@@ -26,7 +26,7 @@ class Base(DeclarativeBase):
 class LastModifiedMixin:
     """Mixin that adds creation and update timestamps to a model."""
 
-    create_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now()
     )
@@ -53,7 +53,7 @@ class User(Base, LastModifiedMixin):
     password: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar: Mapped[str | None] = mapped_column(String, nullable=True)
     role: Mapped[Role] = mapped_column(
-        "roles", Enum(Role, create_type=True), default=Role.user, nullable=False
+        "role", Enum(Role, create_type=True), default=Role.user, nullable=False
     )
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     blocked: Mapped[bool] = mapped_column(Boolean, default=False)

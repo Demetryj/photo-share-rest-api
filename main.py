@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config.handlers import validation_exception_handler
 from src.config.middlewares import setup_cors
 from src.database.db import get_db
+from src.routes import auth
 
 app = FastAPI()
 
@@ -21,6 +22,9 @@ setup_cors(app)
 
 # Register a validation exception handler to return 400 Bad Request responses.
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
+
+
+app.include_router(auth.router, prefix="/api")
 
 
 @app.get("/")
