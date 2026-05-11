@@ -3,17 +3,11 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-
-# from sqlalchemy.ext.asyncio import AsyncSession
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from src.config.messages import HTTPStatusMessages
-
-# from src.database.db import get_db
 from src.config.settings import settings
-
-# from src.entity.models import User
 
 
 class AuthService:
@@ -43,12 +37,6 @@ class AuthService:
 
         return self.pwd_context.hash(plain_password)
 
-    # Decode and validate JWT signature/expiration.
-    def decode_token(self, token: str) -> dict[str, Any]:
-        """Decode and validate a JWT."""
-
-        return jwt.decode(token, self.SECRET_KEY, self.ALGORITHM)
-
     # Builds a JWT token with issue time, expiration, and scope claims.
     def create_token(
         self, payload: dict[str, Any], token_scope: str, expires_delta: timedelta
@@ -64,6 +52,36 @@ class AuthService:
         )
 
         return jwt.encode(payload, self.SECRET_KEY, algorithm=self.ALGORITHM)
+
+    # Creates an access token with the default or overridden expiration time.
+    def create_access_token(
+        self, payload: dict[str, Any], expires_delta: Optional[float] = None
+    ) -> str:
+        """Create an access token for user authentication."""
+
+        return self.create_token(
+            payload=payload,
+            token_scope=self.access_token_name,
+            expires_delta=timedelta(
+                minutes=(
+                    expires_delta if expires_delta else self.access_token_expire_minutes
+                )
+            ),
+        )
+
+    # Creates a refresh token used to obtain a new access token after expiration.
+    def create_refresh_token(
+        self, payload: dict[str, Any], expires_delta: Optional[float] = None
+    ) -> str:
+        """Create a refresh token for renewing user authentication."""
+
+        return self.create_token(
+            payload=payload,
+            token_scope=self.refresh_token_name,
+            expires_delta=timedelta(
+                days=expires_delta if expires_delta else self.refresh_token_expire_days
+            ),
+        )
 
     # Generates an email confirmation token with a configurable lifetime.
     def create_email_confirm_token(
@@ -82,6 +100,12 @@ class AuthService:
                 )
             ),
         )
+
+    # Decode and validate JWT signature/expiration.
+    def decode_token(self, token: str) -> dict[str, Any]:
+        """Decode and validate a JWT."""
+
+        return jwt.decode(token, self.SECRET_KEY, self.ALGORITHM)
 
     # Validate email-confirmation token and extract user's email from `sub`.
     def get_email_from_email_token(self, token: str) -> str:

@@ -3,10 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.messages import EmailMessages, HTTPStatusMessages
 from src.database.db import get_db
+from src.repository import auth as repository_auth
 from src.repository import user as repository_user
+from src.schemas.user import BaseUserSchema, TokenSchema, UserResponse, UserShcema
 from src.services.auth import auth_service
 from src.services.email import send_email
-from src.shemas.user import UserResponse, UserShcema
 
 EMAIL_VERIFY_TITLE = "Confirm your email"
 EMAIL_VERIFY_TEMPLATE = "verify_email.html"
@@ -56,6 +57,49 @@ async def register(
     )
 
     return new_user
+
+
+@router.post(
+    "/signin",
+    response_model=TokenSchema,
+    response_description=HTTPStatusMessages.success,
+)
+async def login(body: BaseUserSchema, db: AsyncSession = Depends(get_db)):
+    """Authenticate a user and return access and refresh tokens."""
+
+    user = await repository_user.get_user_by_email(email=body.email, db=db)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=HTTPStatusMessages.invalid_email_or_password.value,
+        )
+
+    if not user.confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=HTTPStatusMessages.email_not_confirmed.value,
+        )
+
+    is_match_passwords = auth_service.verify_password(
+        plain_password=body.password, hashed_password=user.password
+    )
+    if not is_match_passwords:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=HTTPStatusMessages.invalid_email_or_password.value,
+        )
+
+    # Generate JWT
+    access_token = auth_service.create_access_token(payload={"sub": user.email})
+    refresh_token = auth_service.create_refresh_token(payload={"sub": user.email})
+
+    await repository_auth.add_refresh_token(token=refresh_token, user_id=user.id, db=db)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+    }
 
 
 @router.get(
