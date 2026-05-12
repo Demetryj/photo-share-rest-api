@@ -15,7 +15,8 @@ from src.database.db import get_db
 from src.entity.models import User
 from src.repository import auth as repository_auth
 from src.repository import user as repository_user
-from src.schemas.user import BaseUserSchema, SignInResponse, UserResponse, UserShcema
+from src.schemas.auth import RequestEmail, SignInResponse
+from src.schemas.user import BaseUserSchema, UserResponse, UserShcema
 from src.services.auth import auth_service
 from src.services.email import send_email
 
@@ -217,6 +218,45 @@ async def confirm_email(token: str, db: AsyncSession = Depends(get_db)):
 
     await repository_user.confirm_email(email=email, db=db)
     return {"message": EmailMessages.email_confirmed}
+
+
+@router.post(
+    "/request-confirm-email",
+    response_description=HTTPStatusMessages.success.value,
+    description="Request a new email confirmation message",
+)
+async def request_confirm_email(
+    body: RequestEmail,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Request a new email confirmation message.
+
+    Sends a new verification email when the account exists and is not yet
+    confirmed. The response stays generic to avoid disclosing whether the
+    email address is registered in the system.
+    """
+
+    user = await repository_user.get_user_by_email(email=body.email, db=db)
+    if user is None:
+        return {"message": EmailMessages.check_email_forconfirmation.value}
+
+    if user.confirmed:
+        return {"message": EmailMessages.email_already_confirmed.value}
+
+    verification_token = auth_service.create_email_confirm_token({"sub": user.email})
+
+    background_tasks.add_task(
+        send_email,
+        email=user.email,
+        username=user.username,
+        host=request.base_url,
+        token=verification_token,
+        subject=EMAIL_VERIFY_TITLE,
+        template_name=EMAIL_VERIFY_TEMPLATE,
+    )
+    return {"message": EmailMessages.check_email_forconfirmation.value}
 
 
 @router.post(
