@@ -59,9 +59,8 @@ class UserResponse(BaseModel):
     updated_at: datetime
 
 
-class TokenSchema(BaseModel):
-    """Token response returned after successful authentication or refresh."""
+class SignInResponse(BaseModel):
+    """Response returned after successful sign-in with refresh token in cookie."""
 
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"

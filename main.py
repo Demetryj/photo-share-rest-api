@@ -29,26 +29,14 @@ app.include_router(auth.router, prefix="/api")
 
 @app.get("/")
 def index():
-    """Return a basic application status message.
-
-    :return: Application welcome message.
-    :rtype: dict[str, str]
-    """
+    """Return the base application status message."""
 
     return {"message": "Photo share REST API Application"}
 
 
 @app.get("/api/healthchecker")
 async def healthchecker(db: AsyncSession = Depends(get_db)):
-    """Check database connectivity.
-
-    :param db: SQLAlchemy asynchronous database session.
-    :type db: AsyncSession
-    :raises HTTPException: Raises ``500 Internal Server Error`` when the
-        database check fails.
-    :return: Health check success message.
-    :rtype: dict[str, str]
-    """
+    """Check that the application can connect to the database."""
 
     try:
         # Make request
