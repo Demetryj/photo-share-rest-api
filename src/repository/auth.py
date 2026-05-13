@@ -1,7 +1,7 @@
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.entity.models import RefreshToken
+from src.entity.user import RefreshToken
 
 
 # Create and persist a refresh token hash for a user session.

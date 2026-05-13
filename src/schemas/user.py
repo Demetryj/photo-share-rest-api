@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from src.entity.models import Role
+from src.entity.user import Role
 
 SPECIAL_CHARS = "!@#$%^&*"
 
@@ -12,7 +12,7 @@ SPECIAL_CHARS = "!@#$%^&*"
 class BaseUserSchema(BaseModel):
     """Base schema with common user identity fields for auth-related requests."""
 
-    email: EmailStr = Field(max_length=120)
+    email: EmailStr = Field(max_length=150)
     password: str = Field(
         min_length=8,
         max_length=16,
@@ -39,7 +39,7 @@ class BaseUserSchema(BaseModel):
         return value
 
 
-class UserShcema(BaseUserSchema):
+class UserSchema(BaseUserSchema):
     """User registration request schema."""
 
     username: str = Field(min_length=3, max_length=60)

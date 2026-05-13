@@ -3,8 +3,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.entity.models import Role, User
-from src.schemas.user import UserShcema
+from src.entity.user import Role, User
+from src.schemas.user import UserSchema
 
 
 async def get_user_by_email(email: str, db: AsyncSession) -> User | None:
@@ -23,7 +23,7 @@ async def has_any_users(db: AsyncSession) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-async def create_user(body: UserShcema, db: AsyncSession) -> User:
+async def create_user(body: UserSchema, db: AsyncSession) -> User:
     """Create a user and assign the admin role only to the first account."""
 
     has_users = await has_any_users(db)

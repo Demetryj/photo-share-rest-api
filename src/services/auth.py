@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config.messages import HTTPStatusMessages
 from src.config.settings import settings
 from src.database.db import get_db
-from src.entity.models import User
+from src.entity.user import User
 from src.repository import auth as repository_auth
 from src.repository import user as repository_user
 

@@ -12,11 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.messages import EmailMessages, HTTPStatusMessages
 from src.database.db import get_db
-from src.entity.models import User
+from src.entity.user import User
 from src.repository import auth as repository_auth
 from src.repository import user as repository_user
 from src.schemas.auth import RequestEmail, SignInResponse
-from src.schemas.user import BaseUserSchema, UserResponse, UserShcema
+from src.schemas.user import BaseUserSchema, UserResponse, UserSchema
 from src.services.auth import auth_service
 from src.services.email import send_email
 
@@ -35,7 +35,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     description="Register a new user and send an email verification link",
 )
 async def register(
-    body: UserShcema,
+    body: UserSchema,
     background_tasks: BackgroundTasks,
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -77,6 +77,7 @@ async def register(
     return new_user
 
 
+# TODO Додати редіс для аксес токнів, блок-ліста
 @router.post(
     "/signin",
     response_model=SignInResponse,
