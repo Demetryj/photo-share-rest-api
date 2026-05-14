@@ -40,6 +40,7 @@ PhotoTags = Annotated[
 ]
 
 
+# Upload photo
 @router.post(
     "/",
     response_model=PhotoResponseSchema,
@@ -116,3 +117,35 @@ async def upload_photo(
         tags=tags_for_resp,
         created_at=new_photo.created_at,
     )
+
+
+# Delete photo
+@router.delete(
+    "/",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_description=HTTPStatusMessages.successfully_deleted.value,
+    description="Delete photo by id",
+)
+async def remove_photo(
+    photo_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+):
+    """Delete one photo after ownership check and Cloudinary cleanup."""
+
+    photo = await repository_photo.get_photo_by_id(
+        photo_id=photo_id, db=db
+    )
+    if photo is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=HTTPStatusMessages.not_found.value,
+        )
+
+    # Allow deletion only for the owner of the target photo or an admin.
+    photo_service.check_photo_owner_or_admin_access(
+        photo=photo, current_user=current_user
+    )
+
+    await photo_service.cloudinary_delete(public_id=photo.public_id)
+    await repository_photo.delete_photo(photo=photo, db=db)

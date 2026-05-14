@@ -6,7 +6,10 @@ import cloudinary.uploader
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image, UnidentifiedImageError
 
+from src.config.messages import HTTPStatusMessages
 from src.config.settings import settings
+from src.entity.photo import Photo
+from src.entity.user import Role, User
 
 
 class ImageFormat(enum.Enum):
@@ -138,7 +141,7 @@ async def cloudinary_upload(file: UploadFile, public_id: str) -> str:
     except Exception as err:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to upload photo",
+            detail=HTTPStatusMessages.failed_apload_photo_to_Cloudinary.value,
         ) from err
 
     res_url = cloudinary.CloudinaryImage(public_id).build_url(
@@ -146,3 +149,41 @@ async def cloudinary_upload(file: UploadFile, public_id: str) -> str:
     )
 
     return res_url
+
+
+async def cloudinary_delete(public_id: str) -> None:
+    """Delete an uploaded image from Cloudinary by its public identifier."""
+
+    try:
+        result = cloudinary.uploader.destroy(public_id)
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=HTTPStatusMessages.failed_delete_photo_from_Cloudinary.value,
+        ) from err
+
+    if result.get("result") not in {"ok", "not found"}:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=HTTPStatusMessages.failed_delete_photo_from_Cloudinary.value,
+        )
+
+
+def check_photo_owner_or_admin_access(
+    photo: Photo, current_user: User
+) -> None:
+    """Allow the operation only for the owner of the photo or an admin.
+
+    The function compares the authenticated user's id with the photo owner's
+    id and also allows administrators to proceed. It raises ``403 Forbidden``
+    when a user is neither the owner nor an admin.
+    """
+
+    if (
+        photo.owner_id != current_user.id
+        and current_user.role != Role.admin
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=HTTPStatusMessages.access_denied.value,
+        )

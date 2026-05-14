@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: int
     CLOUDINARY_API_SECRET: str
 
+    # TODO при деплої Значення має бути True.
+    # Встановити відповідне значення в env.
+    # Потрібно буде заначити в рідмі, що для локальної розробки False, а для проду True
+    COOKIE_SECURE: bool = False
+
     @computed_field
     @property
     def DB_URL(self) -> str:

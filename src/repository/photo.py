@@ -34,6 +34,25 @@ async def create_photo(
     return new_photo
 
 
+async def get_photo_by_id(
+    photo_id: int, db: AsyncSession
+) -> Photo | None:
+    """Return one photo by its primary key or ``None`` if it does not exist."""
+
+    stmt = select(Photo).filter_by(id=photo_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def delete_photo(photo: Photo, db: AsyncSession) -> Photo:
+    """Delete a persisted photo record and return the deleted ORM object."""
+
+    await db.delete(photo)
+    await db.commit()
+
+    return photo
+
+
 async def get_existing_tags(
     tags: list[str], db: AsyncSession
 ) -> list[Tag]:
