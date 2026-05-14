@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.messages import EmailMessages, HTTPStatusMessages
+from src.config.settings import settings
 from src.database.db import get_db
 from src.entity.user import User
 from src.repository import auth as repository_auth
@@ -47,7 +48,9 @@ async def register(
     verification email.
     """
 
-    user = await repository_user.get_user_by_email(email=body.email, db=db)
+    user = await repository_user.get_user_by_email(
+        email=body.email, db=db
+    )
 
     if user:
         raise HTTPException(
@@ -84,7 +87,9 @@ async def register(
     response_description=HTTPStatusMessages.success,
     description="Authenticate a user and start a new session",
 )
-async def login(body: BaseUserSchema, db: AsyncSession = Depends(get_db)):
+async def login(
+    body: BaseUserSchema, db: AsyncSession = Depends(get_db)
+):
     """Authenticate a user and start a new session.
 
     Validates user credentials, returns an access token in the response body,
@@ -93,7 +98,9 @@ async def login(body: BaseUserSchema, db: AsyncSession = Depends(get_db)):
     revocable session.
     """
 
-    user = await repository_user.get_user_by_email(email=body.email, db=db)
+    user = await repository_user.get_user_by_email(
+        email=body.email, db=db
+    )
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -116,20 +123,28 @@ async def login(body: BaseUserSchema, db: AsyncSession = Depends(get_db)):
         )
 
     # Generate JWT
-    access_token = auth_service.create_access_token(payload={"sub": user.email})
-    refresh_token = auth_service.create_refresh_token(payload={"sub": user.email})
-    hash_refresh_token = auth_service.get_token_hash(token=refresh_token)
+    access_token = auth_service.create_access_token(
+        payload={"sub": user.email}
+    )
+    refresh_token = auth_service.create_refresh_token(
+        payload={"sub": user.email}
+    )
+    hash_refresh_token = auth_service.get_token_hash(
+        token=refresh_token
+    )
 
     await repository_auth.add_refresh_token(
         hash_token=hash_refresh_token, user_id=user.id, db=db
     )
 
-    response = JSONResponse({"access_token": access_token, "token_type": "bearer"})
+    response = JSONResponse(
+        {"access_token": access_token, "token_type": "bearer"}
+    )
     response.set_cookie(
         key=REFRESH_TOKEN,
         value=refresh_token,
         httponly=True,
-        secure=True,
+        secure=settings.COOKIE_SECURE,
         samesite="lax",
         # Keep cookie lifetime aligned with refresh token JWT expiration (in seconds).
         max_age=auth_service.refresh_cookie_max_age,
@@ -158,7 +173,9 @@ async def logout(
     """
     refresh_token = request.cookies.get(REFRESH_TOKEN)
     if refresh_token:
-        hash_refresh_token = auth_service.get_token_hash(token=refresh_token)
+        hash_refresh_token = auth_service.get_token_hash(
+            token=refresh_token
+        )
         await repository_auth.delete_refresh_token_by_token(
             hash_token=hash_refresh_token, db=db
         )
@@ -198,7 +215,9 @@ async def logout_from_all_devices(
     response_description=HTTPStatusMessages.successful_email_verification.value,
     description="Confirm a user's email address",
 )
-async def confirm_email(token: str, db: AsyncSession = Depends(get_db)):
+async def confirm_email(
+    token: str, db: AsyncSession = Depends(get_db)
+):
     """Confirm a user's email address.
 
     Validates the email confirmation token, resolves the target user, and
@@ -239,14 +258,22 @@ async def request_confirm_email(
     email address is registered in the system.
     """
 
-    user = await repository_user.get_user_by_email(email=body.email, db=db)
+    user = await repository_user.get_user_by_email(
+        email=body.email, db=db
+    )
     if user is None:
-        return {"message": EmailMessages.check_email_forconfirmation.value}
+        return {
+            "message": EmailMessages.check_email_forconfirmation.value
+        }
 
     if user.confirmed:
-        return {"message": EmailMessages.email_already_confirmed.value}
+        return {
+            "message": EmailMessages.email_already_confirmed.value
+        }
 
-    verification_token = auth_service.create_email_confirm_token({"sub": user.email})
+    verification_token = auth_service.create_email_confirm_token(
+        {"sub": user.email}
+    )
 
     background_tasks.add_task(
         send_email,
@@ -257,7 +284,9 @@ async def request_confirm_email(
         subject=EMAIL_VERIFY_TITLE,
         template_name=EMAIL_VERIFY_TEMPLATE,
     )
-    return {"message": EmailMessages.check_email_forconfirmation.value}
+    return {
+        "message": EmailMessages.check_email_forconfirmation.value
+    }
 
 
 @router.post(
@@ -299,27 +328,42 @@ async def refresh_token(
     if user is None:
         raise credentials_exception
 
-    old_refresh_token_hash = auth_service.get_token_hash(token=refresh_token)
-    deleted = await repository_auth.delete_refresh_token_by_token(
-        hash_token=old_refresh_token_hash, db=db
+    old_refresh_token_hash = auth_service.get_token_hash(
+        token=refresh_token
     )
-    if not deleted:
+    if old_refresh_token_hash is None:
+        await repository_auth.delete_refresh_token_by_token(
+            hash_token=old_refresh_token_hash, db=db
+        )
         raise credentials_exception
 
-    access_token = auth_service.create_access_token(payload={"sub": email})
-    new_refresh_token = auth_service.create_refresh_token(payload={"sub": email})
-    new_refresh_token_hash = auth_service.get_token_hash(token=new_refresh_token)
-
-    await repository_auth.add_refresh_token(
-        hash_token=new_refresh_token_hash, user_id=user.id, db=db
+    access_token = auth_service.create_access_token(
+        payload={"sub": email}
+    )
+    new_refresh_token = auth_service.create_refresh_token(
+        payload={"sub": email}
+    )
+    new_refresh_token_hash = auth_service.get_token_hash(
+        token=new_refresh_token
     )
 
-    response = JSONResponse({"access_token": access_token, "token_type": "bearer"})
+    updated = await repository_auth.update_refresh_token(
+        old_hash_token=old_refresh_token_hash,
+        new_hash_token=new_refresh_token_hash,
+        db=db,
+    )
+
+    if updated is None:
+        raise credentials_exception
+
+    response = JSONResponse(
+        {"access_token": access_token, "token_type": "bearer"}
+    )
     response.set_cookie(
         key=REFRESH_TOKEN,
         value=new_refresh_token,
         httponly=True,
-        secure=True,
+        secure=settings.COOKIE_SECURE,
         samesite="lax",
         # Keep cookie lifetime aligned with refresh token JWT expiration (in seconds).
         max_age=auth_service.refresh_cookie_max_age,

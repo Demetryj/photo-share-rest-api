@@ -17,6 +17,7 @@ async def add_refresh_token(
     return record
 
 
+# Fetch one stored refresh token row by its hashed token value.
 async def get_refresh_token_by_token(
     hash_token: str, db: AsyncSession
 ) -> RefreshToken | None:
@@ -27,6 +28,24 @@ async def get_refresh_token_by_token(
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+
+# Rotate an existing stored refresh token hash for the current session.
+async def update_refresh_token(
+    old_hash_token: str, new_hash_token: str, db: AsyncSession
+) -> RefreshToken | None:
+    """Replace one stored refresh token hash with a newly generated hash."""
+
+    db_hash_token = await get_refresh_token_by_token(
+        hash_token=old_hash_token, db=db
+    )
+
+    if db_hash_token:
+        db_hash_token.rf_token = new_hash_token
+        await db.commit()
+        await db.refresh(db_hash_token)
+
+    return db_hash_token
 
 
 # Delete one stored refresh token hash.
