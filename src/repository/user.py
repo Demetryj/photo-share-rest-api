@@ -17,6 +17,16 @@ async def get_user_by_email(
     return user.scalar_one_or_none()
 
 
+async def get_user_by_id(
+    user_id: str, db: AsyncSession
+) -> User | None:
+    """Return a user by ID."""
+
+    stmt = select(User).filter_by(id=user_id)
+    user = await db.execute(stmt)
+    return user.scalar_one_or_none()
+
+
 async def has_any_users(db: AsyncSession) -> bool:
     """Return True if at least one user exists in the database."""
 

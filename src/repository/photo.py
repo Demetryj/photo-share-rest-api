@@ -50,6 +50,20 @@ async def get_photo_by_id(
     return result.scalar_one_or_none()
 
 
+async def get_photos_by_user_id(
+    user_id: int, db: AsyncSession
+) -> list[Photo]:
+    """Return all photos that belong to the specified user."""
+
+    stmt = (
+        select(Photo)
+        .options(selectinload(Photo.tags))
+        .filter_by(owner_id=user_id)
+    )
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
 async def delete_photo(photo: Photo, db: AsyncSession) -> Photo:
     """Delete a persisted photo record and return the deleted ORM object."""
 

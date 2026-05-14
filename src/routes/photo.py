@@ -17,8 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config.messages import HTTPStatusMessages
 from src.database.db import get_db
 from src.entity.photo import Tag
-from src.entity.user import User
+from src.entity.user import Role, User
 from src.repository import photo as repository_photo
+from src.repository import user as repository_user
 from src.schemas.photo import PhotoResponseSchema, TagResponseShema
 from src.services import photo as photo_service
 from src.services.auth import auth_service
@@ -145,6 +146,47 @@ async def get_photo_by_photo_id(
     )
 
     return photo_service.build_photo_response(photo)
+
+
+# Get all user photos by user ID
+@router.get(
+    "/user/{user_id}",
+    response_model=list[PhotoResponseSchema],
+    description="Return a list of user photos by user ID",
+)
+async def get_all_photo_by_user_id(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+) -> list[PhotoResponseSchema]:
+    """Return all photos that belong to the specified user."""
+
+    user = await repository_user.get_user_by_id(
+        user_id=user_id, db=db
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=HTTPStatusMessages.not_found.value,
+        )
+
+    if user_id != current_user.id and current_user.role != Role.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=HTTPStatusMessages.access_denied.value,
+        )
+
+    photo_list = await repository_photo.get_photos_by_user_id(
+        user_id=user_id, db=db
+    )
+
+    resp = [
+        photo_service.build_photo_response(photo)
+        for photo in photo_list
+    ]
+
+    return resp
 
 
 # Delete photo
