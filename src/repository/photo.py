@@ -1,5 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.entity.photo import Photo, Tag
 
@@ -39,7 +40,12 @@ async def get_photo_by_id(
 ) -> Photo | None:
     """Return one photo by its primary key or ``None`` if it does not exist."""
 
-    stmt = select(Photo).filter_by(id=photo_id)
+    stmt = (
+        select(Photo)
+        # Eager-load tags together with the photo so response serialization
+        # does not trigger async lazy loading later.
+        .options(selectinload(Photo.tags)).filter_by(id=photo_id)
+    )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 

@@ -8,8 +8,9 @@ from PIL import Image, UnidentifiedImageError
 
 from src.config.messages import HTTPStatusMessages
 from src.config.settings import settings
-from src.entity.photo import Photo
+from src.entity.photo import Photo, Tag
 from src.entity.user import Role, User
+from src.schemas.photo import PhotoResponseSchema, TagResponseShema
 
 
 class ImageFormat(enum.Enum):
@@ -187,3 +188,25 @@ def check_photo_owner_or_admin_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=HTTPStatusMessages.access_denied.value,
         )
+
+
+def build_photo_response(
+    photo: Photo, tags: list[Tag] | None = None
+) -> PhotoResponseSchema:
+    """Build a photo response schema from a photo entity and its tags."""
+
+    # Use explicitly provided tags when the caller already has a safe loaded
+    # list; otherwise fall back to the ORM relationship on the photo entity.
+    source_tags = tags if tags is not None else photo.tags
+
+    return PhotoResponseSchema(
+        id=photo.id,
+        owner_id=photo.owner_id,
+        description=photo.description,
+        image_url=photo.image_url,
+        tags=[
+            TagResponseShema.model_validate(tag)
+            for tag in source_tags
+        ],
+        created_at=photo.created_at,
+    )

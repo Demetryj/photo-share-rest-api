@@ -19,7 +19,7 @@ from src.database.db import get_db
 from src.entity.photo import Tag
 from src.entity.user import User
 from src.repository import photo as repository_photo
-from src.schemas.photo import PhotoResponseSchema
+from src.schemas.photo import PhotoResponseSchema, TagResponseShema
 from src.services import photo as photo_service
 from src.services.auth import auth_service
 
@@ -45,7 +45,7 @@ PhotoTags = Annotated[
     "/",
     response_model=PhotoResponseSchema,
     response_description=HTTPStatusMessages.success.value,
-    description="Upload a photo, resolve its tags, and store its metadata.",
+    description="Upload a photo along with a description (optional) and tags (optional)",
 )
 async def upload_photo(
     file: UploadFile = File(
@@ -56,7 +56,7 @@ async def upload_photo(
     tags: PhotoTags = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user),
-):
+) -> PhotoResponseSchema:
     """Upload a photo, resolve its tags, and store its metadata.
 
     The endpoint validates the uploaded image, normalizes the optional tag
@@ -83,10 +83,13 @@ async def upload_photo(
         await repository_photo.get_or_create_tag(tag=tag, db=db)
         for tag in normalized_tags
     ]
-    # Extract plain tag names before the photo commit in `create_photo()`,
+
+    # Build response tag schemas before `create_photo()` commits the session,
     # because ORM tag objects may be expired after commit and trigger async
-    # lazy loading on access.
-    tags_for_resp = [tag.name for tag in tag_list]
+    # lazy loading when Pydantic tries to read their attributes.
+    tags_for_resp = [
+        TagResponseShema.model_validate(tag) for tag in tag_list
+    ]
 
     # Build a unique Cloudinary public_id per photo for stable storage and
     # future operations like delete or transformation generation.
@@ -108,29 +111,54 @@ async def upload_photo(
         db=db,
     )
 
-    # Convert ORM tags into plain tag names expected by the API schema.
-    return PhotoResponseSchema(
-        id=new_photo.id,
-        owner_id=new_photo.owner_id,
-        description=new_photo.description,
-        image_url=new_photo.image_url,
-        tags=tags_for_resp,
-        created_at=new_photo.created_at,
+    return photo_service.build_photo_response(
+        new_photo, tags_for_resp
     )
+
+
+# Get photo by photo ID:
+@router.get(
+    "/{photo_id}",
+    response_model=PhotoResponseSchema,
+    description="Return one photo by ID",
+)
+async def get_photo_by_photo_id(
+    photo_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+) -> PhotoResponseSchema:
+    """Return one photo by its identifier or raise 404 if it does not exist."""
+
+    photo = await repository_photo.get_photo_by_id(
+        photo_id=photo_id, db=db
+    )
+
+    if photo is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=HTTPStatusMessages.not_found.value,
+        )
+
+    # Allow access only for the owner of the target photo or an admin.
+    photo_service.check_photo_owner_or_admin_access(
+        photo=photo, current_user=current_user
+    )
+
+    return photo_service.build_photo_response(photo)
 
 
 # Delete photo
 @router.delete(
-    "/",
+    "/{photo_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_description=HTTPStatusMessages.successfully_deleted.value,
-    description="Delete photo by id",
+    description="Delete photo by ID",
 )
 async def remove_photo(
     photo_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user),
-):
+) -> None:
     """Delete one photo after ownership check and Cloudinary cleanup."""
 
     photo = await repository_photo.get_photo_by_id(
