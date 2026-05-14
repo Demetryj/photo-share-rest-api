@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,7 @@ class AuthService:
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     SECRET_KEY = settings.secret_key
     ALGORITHM = settings.hash_algorithm
-    oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/signin")
+    security = HTTPBearer()
     access_token_expire_minutes = 15
     refresh_token_expire_days = 7
     email_confirm_token_expire_minutes = 10
@@ -30,13 +30,19 @@ class AuthService:
     refresh_token_name = "refresh_token"
     email_confirm_token_name = "email_token"
     password_reset_token = "password_reset_token"
-    refresh_cookie_max_age = refresh_token_expire_days * 24 * 60 * 60  # seconds
+    refresh_cookie_max_age = (
+        refresh_token_expire_days * 24 * 60 * 60
+    )  # seconds
 
     # Checks whether a plain-text password matches its stored hash.
-    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+    def verify_password(
+        self, plain_password: str, hashed_password: str
+    ) -> bool:
         """Verify that the provided password matches the stored password hash."""
 
-        return self.pwd_context.verify(plain_password, hashed_password)
+        return self.pwd_context.verify(
+            plain_password, hashed_password
+        )
 
     # Creates a bcrypt hash from a plain-text password.
     def create_hashed_password(self, plain_password: str) -> str:
@@ -51,7 +57,10 @@ class AuthService:
 
     # Builds a JWT token with issue time, expiration, and scope claims.
     def create_token(
-        self, payload: dict[str, Any], token_scope: str, expires_delta: timedelta
+        self,
+        payload: dict[str, Any],
+        token_scope: str,
+        expires_delta: timedelta,
     ) -> str:
         """Create a signed JWT token for the provided payload and scope."""
 
@@ -60,14 +69,22 @@ class AuthService:
 
         payload = payload.copy()
         payload.update(
-            {"iat": current_datetime, "exp": expire_datetime, "scope": token_scope}
+            {
+                "iat": current_datetime,
+                "exp": expire_datetime,
+                "scope": token_scope,
+            }
         )
 
-        return jwt.encode(payload, self.SECRET_KEY, algorithm=self.ALGORITHM)
+        return jwt.encode(
+            payload, self.SECRET_KEY, algorithm=self.ALGORITHM
+        )
 
     # Creates an access token with the default or overridden expiration time.
     def create_access_token(
-        self, payload: dict[str, Any], expires_delta: Optional[float] = None
+        self,
+        payload: dict[str, Any],
+        expires_delta: Optional[float] = None,
     ) -> str:
         """Create an access token for user authentication."""
 
@@ -76,14 +93,18 @@ class AuthService:
             token_scope=self.access_token_name,
             expires_delta=timedelta(
                 minutes=(
-                    expires_delta if expires_delta else self.access_token_expire_minutes
+                    expires_delta
+                    if expires_delta
+                    else self.access_token_expire_minutes
                 )
             ),
         )
 
     # Creates a refresh token used to obtain a new access token after expiration.
     def create_refresh_token(
-        self, payload: dict[str, Any], expires_delta: Optional[float] = None
+        self,
+        payload: dict[str, Any],
+        expires_delta: Optional[float] = None,
     ) -> str:
         """Create a refresh token for renewing user authentication."""
 
@@ -91,13 +112,19 @@ class AuthService:
             payload=payload,
             token_scope=self.refresh_token_name,
             expires_delta=timedelta(
-                days=expires_delta if expires_delta else self.refresh_token_expire_days
+                days=(
+                    expires_delta
+                    if expires_delta
+                    else self.refresh_token_expire_days
+                )
             ),
         )
 
     # Generates an email confirmation token with a configurable lifetime.
     def create_email_confirm_token(
-        self, payload: dict[str, Any], expires_value: Optional[int] = None
+        self,
+        payload: dict[str, Any],
+        expires_value: Optional[int] = None,
     ) -> str:
         """Create a JWT token used to confirm a user's email address."""
 
@@ -137,8 +164,10 @@ class AuthService:
                 raise credentials_exception
 
             refresh_token_hash = self.get_token_hash(refresh_token)
-            db_token = await repository_auth.get_refresh_token_by_token(
-                refresh_token_hash, db
+            db_token = (
+                await repository_auth.get_refresh_token_by_token(
+                    refresh_token_hash, db
+                )
             )
             if db_token is None:
                 raise credentials_exception
@@ -177,7 +206,7 @@ class AuthService:
     # Validate access token, authorize request, and resolve current user.
     async def get_current_user(
         self,
-        token: str = Depends(oauth2_scheme),
+        credentials: HTTPAuthorizationCredentials = Depends(security),
         db: AsyncSession = Depends(get_db),
     ) -> User:
         """Authorize a request and return the current user."""
@@ -188,6 +217,7 @@ class AuthService:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+        token = credentials.credentials
         try:
             # Decode JWT
             payload = self.decode_token(token)
@@ -200,7 +230,9 @@ class AuthService:
         except JWTError:
             raise credentials_exception
 
-        user = await repository_user.get_user_by_email(email=email, db=db)
+        user = await repository_user.get_user_by_email(
+            email=email, db=db
+        )
         if user is None:
             raise credentials_exception
         return user

@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for users, authentication tokens, and user`s images"""
+"""Shared SQLAlchemy declarative base and common model mixins."""
 
 from datetime import datetime
 
@@ -20,7 +20,9 @@ class Base(DeclarativeBase):
 class LastModifiedMixin:
     """Mixin that adds creation and update timestamps to a model."""
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now()
     )

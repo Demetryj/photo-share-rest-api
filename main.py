@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config.handlers import validation_exception_handler
 from src.config.middlewares import setup_cors
 from src.database.db import get_db
-from src.routes import auth
+from src.routes import auth, photo
 
 app = FastAPI()
 
@@ -21,10 +21,13 @@ logger = logging.getLogger(__name__)
 setup_cors(app)
 
 # Register a validation exception handler to return 400 Bad Request responses.
-app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(
+    RequestValidationError, validation_exception_handler
+)
 
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(photo.router, prefix="/api")
 
 
 @app.get("/")
@@ -44,9 +47,12 @@ async def healthchecker(db: AsyncSession = Depends(get_db)):
         result = result.fetchone()
         if result is None:
             raise HTTPException(
-                status_code=500, detail="Database is not configured correctly"
+                status_code=500,
+                detail="Database is not configured correctly",
             )
         return {"message": "Welcome to FastAPI!"}
     except SQLAlchemyError:
         logger.exception("Healthcheck database query failed")
-        raise HTTPException(status_code=500, detail="Error connecting to the database")
+        raise HTTPException(
+            status_code=500, detail="Error connecting to the database"
+        )

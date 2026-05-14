@@ -7,7 +7,9 @@ from src.entity.user import Role, User
 from src.schemas.user import UserSchema
 
 
-async def get_user_by_email(email: str, db: AsyncSession) -> User | None:
+async def get_user_by_email(
+    email: str, db: AsyncSession
+) -> User | None:
     """Return a user by email."""
 
     stmt = select(User).filter_by(email=email)
@@ -28,7 +30,9 @@ async def create_user(body: UserSchema, db: AsyncSession) -> User:
 
     has_users = await has_any_users(db)
 
-    user_data = body.model_dump(include={"username", "email", "password"})
+    user_data = body.model_dump(
+        include={"username", "email", "password"}
+    )
     user_data["role"] = Role.admin if not has_users else Role.user
 
     new_user = User(**user_data)

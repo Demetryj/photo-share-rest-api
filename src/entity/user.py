@@ -1,3 +1,5 @@
+"""ORM models related to application users and authentication tokens."""
+
 import enum
 from datetime import datetime
 
@@ -29,15 +31,24 @@ class User(Base, LastModifiedMixin):
 
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, index=True)
+    id: Mapped[int] = mapped_column(
+        primary_key=True, autoincrement=True, index=True
+    )
     username: Mapped[str] = mapped_column(String(60), nullable=False)
-    email: Mapped[str] = mapped_column(String(150), nullable=False, unique=True)
+    email: Mapped[str] = mapped_column(
+        String(150), nullable=False, unique=True
+    )
     password: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar: Mapped[str | None] = mapped_column(String, nullable=True)
     role: Mapped[Role] = mapped_column(
-        "role", Enum(Role, create_type=True), default=Role.user, nullable=False
+        "role",
+        Enum(Role, create_type=True),
+        default=Role.user,
+        nullable=False,
     )
-    confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    confirmed: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         "RefreshToken", backref="user", cascade="all, delete-orphan"
@@ -52,8 +63,12 @@ class RefreshToken(Base, LastModifiedMixin):
 
     __tablename__ = "refresh_tokens"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    rf_token: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    id: Mapped[int] = mapped_column(
+        primary_key=True, autoincrement=True
+    )
+    rf_token: Mapped[str] = mapped_column(
+        String(1024), nullable=False, unique=True
+    )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE")
     )
@@ -66,16 +81,22 @@ class PasswordResetToken(Base):
 
     __tablename__ = "password_reset_tokens"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        primary_key=True, autoincrement=True
+    )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE")
     )
     token_hash: Mapped[str] = mapped_column(
         String(1024), nullable=False, unique=True, index=True
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False
+    )
     used_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, default=None
     )
 
-    user: Mapped["User"] = relationship("User", backref="password_reset_tokens")
+    user: Mapped["User"] = relationship(
+        "User", backref="password_reset_tokens"
+    )

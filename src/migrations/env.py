@@ -7,9 +7,10 @@ from sqlalchemy import Connection, pool
 # from sqlalchemy import engine_from_config
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-# import all entities (models)
-import src.entity  # noqa: F401
 from src.config.settings import settings as app_config
+
+# import all entities (models)
+from src.entity import photo, user  # noqa: F401
 from src.entity.models import Base
 
 # this is the Alembic Config object, which provides
@@ -81,7 +82,9 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations(connection: Connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection, target_metadata=target_metadata
+    )
     with context.begin_transaction():
         context.run_migrations()
 
