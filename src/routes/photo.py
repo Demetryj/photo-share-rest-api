@@ -121,14 +121,14 @@ async def upload_photo(
 @router.get(
     "/{photo_id}",
     response_model=PhotoResponseSchema,
-    description="Return one photo by ID",
+    description="Return one photo by ID. Accessible by the photo owner or an admin.",
 )
 async def get_photo_by_photo_id(
     photo_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user),
 ) -> PhotoResponseSchema:
-    """Return one photo by its identifier or raise 404 if it does not exist."""
+    """Return one photo by its identifier for the owner or an admin."""
 
     photo = await repository_photo.get_photo_by_id(
         photo_id=photo_id, db=db
@@ -152,14 +152,14 @@ async def get_photo_by_photo_id(
 @router.get(
     "/user/{user_id}",
     response_model=list[PhotoResponseSchema],
-    description="Return a list of user photos by user ID",
+    description="Return a list of user photos by user ID. Accessible by the user or an admin.",
 )
 async def get_all_photo_by_user_id(
     user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user),
 ) -> list[PhotoResponseSchema]:
-    """Return all photos that belong to the specified user."""
+    """Return all photos of the specified user for that user or an admin."""
 
     user = await repository_user.get_user_by_id(
         user_id=user_id, db=db
@@ -194,14 +194,14 @@ async def get_all_photo_by_user_id(
     "/{photo_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_description=HTTPStatusMessages.successfully_deleted.value,
-    description="Delete photo by ID",
+    description="Delete a photo by ID. Accessible by the photo owner or an admin.",
 )
 async def remove_photo(
     photo_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user),
 ) -> None:
-    """Delete one photo after ownership check and Cloudinary cleanup."""
+    """Delete one photo for the owner or an admin after Cloudinary cleanup."""
 
     photo = await repository_photo.get_photo_by_id(
         photo_id=photo_id, db=db
