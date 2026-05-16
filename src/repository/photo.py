@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -51,7 +51,7 @@ async def get_photo_by_id(
 
 
 async def get_photos_by_user_id(
-    user_id: int, db: AsyncSession
+    user_id: int, limit: int, offset: int, db: AsyncSession
 ) -> list[Photo]:
     """Return all photos that belong to the specified user."""
 
@@ -59,9 +59,24 @@ async def get_photos_by_user_id(
         select(Photo)
         .options(selectinload(Photo.tags))
         .filter_by(owner_id=user_id)
+        .offset(offset)
+        .limit(limit)
+        .order_by(Photo.created_at.desc(), Photo.id.desc())
     )
     result = await db.execute(stmt)
     return result.scalars().all()
+
+
+async def get_total_number_of_photos(
+    user_id: int, db: AsyncSession
+) -> int:
+    """Return the total number of photos that belong to the user."""
+
+    stmt = select(func.count(Photo.id)).where(
+        Photo.owner_id == user_id
+    )
+    total = await db.scalar(stmt)
+    return total
 
 
 async def delete_photo(photo: Photo, db: AsyncSession) -> Photo:

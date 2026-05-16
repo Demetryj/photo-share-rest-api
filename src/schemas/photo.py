@@ -23,3 +23,13 @@ class PhotoResponseSchema(BaseModel):
     image_url: str
     tags: list[TagResponseShema]
     created_at: datetime
+
+
+class PaginatedPhotoResponseSchema(BaseModel):
+    """Response schema for a paginated list of user photos."""
+
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    items: list[PhotoResponseSchema]
