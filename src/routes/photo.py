@@ -26,6 +26,7 @@ from src.schemas.photo import (
     PaginatedPhotoResponseSchema,
     PhotoResponseSchema,
     TagResponseShema,
+    UpdatePhotoDescriptionSchema,
 )
 from src.services import photo as photo_service
 from src.services.auth import auth_service
@@ -141,19 +142,8 @@ async def get_photo_by_photo_id(
     an administrator, and returns the serialized photo data.
     """
 
-    photo = await repository_photo.get_photo_by_id(
-        photo_id=photo_id, db=db
-    )
-
-    if photo is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=HTTPStatusMessages.not_found.value,
-        )
-
-    # Allow access only for the owner of the target photo or an admin.
-    photo_service.check_photo_owner_or_admin_access(
-        photo=photo, current_user=current_user
+    photo = await photo_service.get_photo_for_owner_or_admin(
+        photo_id=photo_id, current_user=current_user, db=db
     )
 
     return photo_service.build_photo_response(photo)
@@ -243,19 +233,40 @@ async def remove_photo(
     photo record from the database.
     """
 
-    photo = await repository_photo.get_photo_by_id(
-        photo_id=photo_id, db=db
-    )
-    if photo is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=HTTPStatusMessages.not_found.value,
-        )
-
-    # Allow deletion only for the owner of the target photo or an admin.
-    photo_service.check_photo_owner_or_admin_access(
-        photo=photo, current_user=current_user
+    photo = await photo_service.get_photo_for_owner_or_admin(
+        photo_id=photo_id, current_user=current_user, db=db
     )
 
     await photo_service.cloudinary_delete(public_id=photo.public_id)
     await repository_photo.delete_photo(photo=photo, db=db)
+
+
+# Update photo description
+@router.put(
+    "/{photo_id}/description",
+    response_model=PhotoResponseSchema,
+    description="Update the description of a photo. Accessible by the photo owner or an admin.",
+)
+async def update_photo_description(
+    photo_id: int,
+    body: UpdatePhotoDescriptionSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+) -> PhotoResponseSchema:
+    """Update the description of a photo for the owner or an admin.
+
+    The endpoint fetches the target photo by its identifier, checks that it
+    exists, verifies that the current user is either the photo owner or an
+    administrator, updates the photo description, and returns the updated
+    serialized photo data.
+    """
+
+    photo = await photo_service.get_photo_for_owner_or_admin(
+        photo_id=photo_id, current_user=current_user, db=db
+    )
+
+    updated_photo = await repository_photo.update_photo_description(
+        photo=photo, description=body.description, db=db
+    )
+
+    return photo_service.build_photo_response(photo=updated_photo)

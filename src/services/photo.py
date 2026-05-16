@@ -5,11 +5,13 @@ import cloudinary
 import cloudinary.uploader
 from fastapi import HTTPException, UploadFile, status
 from PIL import Image, UnidentifiedImageError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.messages import HTTPStatusMessages
 from src.config.settings import settings
 from src.entity.photo import Photo, Tag
 from src.entity.user import Role, User
+from src.repository import photo as repository_photo
 from src.schemas.photo import PhotoResponseSchema, TagResponseShema
 
 
@@ -188,6 +190,36 @@ def check_photo_owner_or_admin_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=HTTPStatusMessages.access_denied.value,
         )
+
+
+async def get_photo_for_owner_or_admin(
+    photo_id: int,
+    current_user: User,
+    db: AsyncSession,
+) -> Photo:
+    """Return a photo if it exists and is accessible to the owner or an admin.
+
+    The function fetches the photo by its identifier, raises a 404 error if
+    it does not exist, verifies that the current user is either the photo
+    owner or an administrator, and returns the photo entity for further use.
+    """
+
+    photo = await repository_photo.get_photo_by_id(
+        photo_id=photo_id, db=db
+    )
+
+    if photo is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=HTTPStatusMessages.not_found.value,
+        )
+
+    # Allow access only for the owner of the target photo or an admin.
+    check_photo_owner_or_admin_access(
+        photo=photo, current_user=current_user
+    )
+
+    return photo
 
 
 def build_photo_response(

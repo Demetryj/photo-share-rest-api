@@ -123,3 +123,15 @@ async def get_or_create_tag(tag: str, db: AsyncSession) -> Tag:
     # committing early, so photo creation can still be saved atomically later.
     await db.flush()
     return new_tag
+
+
+async def update_photo_description(
+    photo: Photo, description: str, db: AsyncSession
+) -> Photo:
+    """Update the description of a persisted photo and return the updated object."""
+
+    photo.description = description
+    await db.commit()
+    await db.refresh(photo)
+
+    return photo
