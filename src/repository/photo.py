@@ -2,7 +2,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.entity.photo import Photo, Tag
+from src.entity.photo import (
+    Photo,
+    PhotoTransformation,
+    Tag,
+    TransformationType,
+)
 
 
 async def create_photo(
@@ -152,3 +157,66 @@ async def add_photo_tags(
     await db.refresh(photo)
 
     return photo
+
+
+async def create_photo_transformation(
+    photo_id: int,
+    user_id: int,
+    transformation_type: TransformationType,
+    transformation_params: dict,
+    transformed_url: str,
+    qr_code_url: str | None,
+    db: AsyncSession,
+) -> PhotoTransformation:
+    """Create and persist a new transformed photo link record.
+
+    The function builds a ``PhotoTransformation`` ORM entity for a saved
+    transformed photo URL, links it to the target photo and user, stores the
+    transformation type and parameters, commits the transaction, refreshes
+    the saved row, and returns the persisted record.
+    """
+
+    record = PhotoTransformation(
+        photo_id=photo_id,
+        user_id=user_id,
+        transformation_type=transformation_type,
+        transformation_params=transformation_params,
+        transformed_url=transformed_url,
+        qr_code_url=qr_code_url,
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+
+    return record
+
+
+async def get_photo_transformations_by_photo_id(
+    photo_id: int, db: AsyncSession
+) -> list[PhotoTransformation]:
+    """Return all saved transformation links for the specified photo.
+
+    The function queries the database for transformation records that belong
+    to the given photo identifier, orders them from newest to oldest, and
+    returns the corresponding ORM objects.
+    """
+
+    stmt = (
+        select(PhotoTransformation)
+        .where(PhotoTransformation.photo_id == photo_id)
+        .order_by(PhotoTransformation.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+async def get_photo_transformation_by_id(
+    transformation_id: int, db: AsyncSession
+) -> PhotoTransformation | None:
+    """Return one saved transformation link by its identifier."""
+
+    stmt = select(PhotoTransformation).where(
+        PhotoTransformation.id == transformation_id
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()

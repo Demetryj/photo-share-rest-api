@@ -34,6 +34,13 @@ class TransformationType(enum.Enum):
     blur = "blur"
 
 
+class BlurMode(enum.Enum):
+    """Allowed blur algorithms for local photo preview transformations."""
+
+    gaussian = "gaussian"
+    box = "box"
+
+
 # Association table for the many-to-many relationship between photos and tags.
 photo_tags = Table(
     "photo_tags",

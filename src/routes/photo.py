@@ -13,10 +13,14 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from pydantic import Field, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config.messages import HTTPStatusMessages
+from src.config.messages import (
+    OWNER_OR_ADMIN_ACCESS,
+    HTTPStatusMessages,
+)
 from src.database.db import get_db
 from src.entity.user import Role, User
 from src.repository import photo as repository_photo
@@ -25,6 +29,8 @@ from src.schemas.photo import (
     AddTagsSchema,
     PaginatedPhotoResponseSchema,
     PhotoResponseSchema,
+    PhotoTransformationRequestSchema,
+    PhotoTransformationResponseSchema,
     UpdatePhotoDescriptionSchema,
 )
 from src.services import photo as photo_service
@@ -52,7 +58,10 @@ PhotoTags = Annotated[
     "/",
     response_model=PhotoResponseSchema,
     response_description=HTTPStatusMessages.success.value,
-    description="Upload a photo along with a description (optional) and tags (optional)",
+    description=(
+        "Upload a photo along with a description (optional) and tags (optional).\n\n"
+        f"{OWNER_OR_ADMIN_ACCESS}"
+    ),
 )
 async def upload_photo(
     file: UploadFile = File(
@@ -107,7 +116,9 @@ async def upload_photo(
 @router.get(
     "/{photo_id}",
     response_model=PhotoResponseSchema,
-    description="Return one photo by ID. Accessible by the photo owner or an admin.",
+    description=(
+        "Return one photo by ID.\n\n" f"{OWNER_OR_ADMIN_ACCESS}"
+    ),
 )
 async def get_photo_by_photo_id(
     photo_id: int,
@@ -132,7 +143,10 @@ async def get_photo_by_photo_id(
 @router.get(
     "/user/{user_id}",
     response_model=PaginatedPhotoResponseSchema,
-    description="Return a paginated list of photos for the specified user. Accessible by the user or an admin.",
+    description=(
+        "Return a paginated list of photos for the specified user.\n\n"
+        f"{OWNER_OR_ADMIN_ACCESS}"
+    ),
 )
 async def get_all_photo_by_user_id(
     user_id: int,
@@ -197,7 +211,9 @@ async def get_all_photo_by_user_id(
     "/{photo_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_description=HTTPStatusMessages.successfully_deleted.value,
-    description="Delete a photo by ID. Accessible by the photo owner or an admin.",
+    description=(
+        "Delete a photo by ID.\n\n" f"{OWNER_OR_ADMIN_ACCESS}"
+    ),
 )
 async def remove_photo(
     photo_id: int,
@@ -224,7 +240,10 @@ async def remove_photo(
 @router.put(
     "/{photo_id}/description",
     response_model=PhotoResponseSchema,
-    description="Update the description of a photo. Accessible by the photo owner or an admin.",
+    description=(
+        "Update the description of a photo.\n\n"
+        f"{OWNER_OR_ADMIN_ACCESS}"
+    ),
 )
 async def update_photo_description(
     photo_id: int,
@@ -254,7 +273,10 @@ async def update_photo_description(
 @router.patch(
     "/{photo_id}/tags",
     response_model=PhotoResponseSchema,
-    description="Replace the tags of a photo with up to 5 tags. Accessible by the photo owner or an admin.",
+    description=(
+        "Replace the tags of a photo with up to 5 tags.\n\n"
+        f"{OWNER_OR_ADMIN_ACCESS}"
+    ),
 )
 async def add_photo_tags(
     photo_id: int,
@@ -286,3 +308,199 @@ async def add_photo_tags(
     return photo_service.build_photo_response(
         photo=updated_photo, tags=tags_for_resp
     )
+
+
+@router.post(
+    "/{photo_id}/transform-preview",
+    description=(
+        "Generate a temporary preview of a transformed photo without saving it.\n\n"
+        f"{OWNER_OR_ADMIN_ACCESS}\n\n"
+        "Parameter rules by transformation type:\n"
+        "- `resize` requires `width` and `height`\n"
+        "- `crop` requires `width`, `height`, `x`, and `y`\n"
+        "- `rotate` requires `angle`, where `angle` is the rotation in "
+        "degrees; it optionally accepts `expand`, which enlarges the canvas "
+        "to avoid clipping, and `background`, which sets the fill color of "
+        "empty corners\n"
+        "- `blur` requires `blur_radius`; it optionally accepts `blur_mode` "
+        "(`gaussian` or `box`), where `blur_radius` controls blur intensity\n"
+        "- `grayscale` does not require additional parameters"
+    ),
+)
+async def preview_photo_transformation(
+    photo_id: int,
+    body: PhotoTransformationRequestSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+) -> StreamingResponse:
+    """Generate a temporary preview for a transformed photo.
+
+    The endpoint fetches the target photo by its identifier, checks that it
+    exists, verifies that the current user is either the photo owner or an
+    administrator, validates the transformation parameters, applies the
+    transformation locally with Pillow, and returns the preview image without
+    saving anything to the database or Cloudinary.
+    """
+
+    photo = await photo_service.get_photo_for_owner_or_admin(
+        photo_id=photo_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    params = photo_service.build_transformation_params(body)
+
+    return await photo_service.build_preview_response(
+        photo=photo,
+        transformation_type=body.transformation_type,
+        params=params,
+    )
+
+
+@router.post(
+    "/{photo_id}/transformations",
+    response_model=PhotoTransformationResponseSchema,
+    status_code=status.HTTP_201_CREATED,
+    description=(
+        "Create and save a transformed photo link with a QR code.\n\n"
+        f"{OWNER_OR_ADMIN_ACCESS}\n\n"
+        "Parameter rules by transformation type:\n"
+        "- `resize` requires `width` and `height`\n"
+        "- `crop` requires `width`, `height`, `x`, and `y`\n"
+        "- `rotate` requires `angle`, where `angle` is the rotation in "
+        "degrees; it optionally accepts `expand`, which enlarges the canvas "
+        "to avoid clipping, and `background`, which sets the fill color of "
+        "empty corners\n"
+        "- `blur` requires `blur_radius`; it optionally accepts `blur_mode` "
+        "(`gaussian` or `box`), where `blur_radius` controls blur intensity\n"
+        "- `grayscale` does not require additional parameters"
+    ),
+)
+async def create_photo_transformation(
+    photo_id: int,
+    body: PhotoTransformationRequestSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+) -> PhotoTransformationResponseSchema:
+    """Create and save a transformed photo link with its QR code.
+
+    The endpoint fetches the target photo by its identifier, checks that it
+    exists, verifies that the current user is either the photo owner or an
+    administrator, validates the transformation parameters, builds the final
+    Cloudinary URL, generates a QR code image, stores the transformation
+    record in the database, and returns the saved transformation data.
+    """
+
+    photo = await photo_service.get_photo_for_owner_or_admin(
+        photo_id=photo_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    params = photo_service.build_transformation_params(body)
+
+    transformed_url = photo_service.build_transformed_photo_url(
+        photo=photo,
+        transformation_type=body.transformation_type,
+        params=params,
+    )
+
+    qr_code_url = await photo_service.generate_qr_code_url(
+        transformed_url=transformed_url,
+        photo_id=photo.id,
+        user_id=current_user.id,
+    )
+
+    transformation = (
+        await repository_photo.create_photo_transformation(
+            photo_id=photo.id,
+            user_id=current_user.id,
+            transformation_type=body.transformation_type,
+            transformation_params=params,
+            transformed_url=transformed_url,
+            qr_code_url=qr_code_url,
+            db=db,
+        )
+    )
+
+    return transformation
+
+
+@router.get(
+    "/{photo_id}/transformations",
+    response_model=list[PhotoTransformationResponseSchema],
+    description=(
+        "Return all saved transformations for a photo.\n\n"
+        f"{OWNER_OR_ADMIN_ACCESS}"
+    ),
+)
+async def get_all_photo_transformations(
+    photo_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+) -> list[PhotoTransformationResponseSchema]:
+    """Return all saved transformation links for a photo.
+
+    The endpoint fetches the target photo by its identifier, checks that it
+    exists, verifies that the current user is either the photo owner or an
+    administrator, and returns the saved transformation records for that
+    photo.
+    """
+
+    photo = await photo_service.get_photo_for_owner_or_admin(
+        photo_id=photo_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    transformations = (
+        await repository_photo.get_photo_transformations_by_photo_id(
+            photo_id=photo.id,
+            db=db,
+        )
+    )
+
+    return transformations
+
+
+@router.get(
+    "/transformations/{transformation_id}",
+    response_model=PhotoTransformationResponseSchema,
+    description=(
+        "Return one saved transformation by ID.\n\n"
+        f"{OWNER_OR_ADMIN_ACCESS}"
+    ),
+)
+async def get_photo_transformation_by_id(
+    transformation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+) -> PhotoTransformationResponseSchema:
+    """Return one saved transformation link by its identifier.
+
+    The endpoint fetches the requested transformation record by its
+    identifier, checks that it exists, verifies that the current user is
+    either the owner of the related photo or an administrator, and returns
+    the saved transformation data.
+    """
+
+    transformation = (
+        await repository_photo.get_photo_transformation_by_id(
+            transformation_id=transformation_id,
+            db=db,
+        )
+    )
+
+    if transformation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=HTTPStatusMessages.not_found.value,
+        )
+
+    await photo_service.get_photo_for_owner_or_admin(
+        photo_id=transformation.photo_id,
+        current_user=current_user,
+        db=db,
+    )
+
+    return transformation

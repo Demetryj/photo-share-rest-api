@@ -1,18 +1,30 @@
 import enum
+from datetime import datetime, timezone
 from io import BytesIO
+from typing import NoReturn
 
 import cloudinary
 import cloudinary.uploader
+import httpx
+import qrcode
 from fastapi import HTTPException, UploadFile, status
-from PIL import Image, UnidentifiedImageError
+from fastapi.responses import StreamingResponse
+from PIL import Image, ImageFilter, UnidentifiedImageError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config.messages import HTTPStatusMessages
+from src.config.messages import (
+    HTTPStatusMessages,
+    PhotoTransformationMessage,
+)
 from src.config.settings import settings
-from src.entity.photo import Photo, Tag
+from src.entity.photo import BlurMode, Photo, Tag, TransformationType
 from src.entity.user import Role, User
 from src.repository import photo as repository_photo
-from src.schemas.photo import PhotoResponseSchema, TagResponseShema
+from src.schemas.photo import (
+    PhotoResponseSchema,
+    PhotoTransformationRequestSchema,
+    TagResponseShema,
+)
 
 
 class ImageFormat(enum.Enum):
@@ -29,6 +41,14 @@ ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 MAX_NUMBER_TAGS = 5
+HTTP_CLIENT_TIMEOUT = 30.0
+PREVIEW_IMAGE_FORMAT = "JPEG"
+PREVIEW_MEDIA_TYPE = "image/jpeg"
+QR_IMAGE_FORMAT = "PNG"
+CLOUDINARY_IMAGE_RESOURCE_TYPE = "image"
+CLOUDINARY_CROP_FILL = "fill"
+CLOUDINARY_CROP_CROP = "crop"
+CLOUDINARY_EFFECT_GRAYSCALE = "grayscale"
 
 cloudinary.config(
     cloud_name=settings.CLOUDINARY_NAME,
@@ -280,3 +300,265 @@ def build_photo_response(
         ],
         created_at=photo.created_at,
     )
+
+
+def create_exception(
+    message: PhotoTransformationMessage | str,
+    status_code: int = status.HTTP_400_BAD_REQUEST,
+) -> NoReturn:
+    """Raise an HTTP exception with the provided status code and message."""
+
+    raise HTTPException(
+        status_code=status_code,
+        detail=message,
+    )
+
+
+def build_transformation_params(
+    body: PhotoTransformationRequestSchema,
+) -> dict:
+    """Validate and normalize transformation parameters for preview and save.
+
+    The function validates the parameter set according to the selected
+    transformation type and returns a normalized dictionary that can be used
+    both for local preview generation and Cloudinary URL building.
+    """
+
+    transformation_type = body.transformation_type
+    params: dict = {}
+
+    if transformation_type == TransformationType.resize:
+        if body.width is None or body.height is None:
+            create_exception(
+                PhotoTransformationMessage.resize_requires_both_width_and_height.value
+            )
+        params["width"] = body.width
+        params["height"] = body.height
+
+    elif transformation_type == TransformationType.crop:
+        if body.width is None or body.height is None:
+            create_exception(
+                PhotoTransformationMessage.crop_requires_both_width_and_height.value
+            )
+        params["width"] = body.width
+        params["height"] = body.height
+        params["x"] = body.x or 0
+        params["y"] = body.y or 0
+
+    elif transformation_type == TransformationType.rotate:
+        if body.angle is None:
+            create_exception(
+                PhotoTransformationMessage.rotate_equires_angle.value
+            )
+        params["angle"] = body.angle
+        params["expand"] = body.expand
+        if body.background:
+            params["background"] = body.background
+
+    elif transformation_type == TransformationType.blur:
+        if body.blur_radius is None:
+            create_exception(
+                PhotoTransformationMessage.blur_requires_blur_radius.value
+            )
+        params["blur_mode"] = body.blur_mode
+        params["blur_radius"] = body.blur_radius
+
+    elif transformation_type == TransformationType.grayscale:
+        params = {}
+
+    else:
+        create_exception(
+            PhotoTransformationMessage.unsupported_transformation_type.value
+        )
+
+    return params
+
+
+async def download_original_photo(photo: Photo) -> bytes:
+    """Download the original photo bytes from its stored URL.
+
+    The function sends an HTTP request to the stored original image URL,
+    validates the response status, and returns the downloaded binary content
+    so it can be used for local preview transformations.
+    """
+
+    async with httpx.AsyncClient(
+        timeout=HTTP_CLIENT_TIMEOUT
+    ) as client:
+        response = await client.get(photo.image_url)
+        response.raise_for_status()
+        return response.content
+
+
+def apply_preview_transformation(
+    image: Image.Image,
+    transformation_type: TransformationType,
+    params: dict,
+) -> Image.Image:
+    """Apply a local preview transformation to a Pillow image.
+
+    The function mirrors the application's supported transformation set for
+    preview purposes without creating any derived asset in Cloudinary.
+    """
+
+    if transformation_type == TransformationType.resize:
+        return image.resize((params["width"], params["height"]))
+
+    if transformation_type == TransformationType.crop:
+        x = params["x"]
+        y = params["y"]
+        width = params["width"]
+        height = params["height"]
+        return image.crop((x, y, x + width, y + height))
+
+    if transformation_type == TransformationType.rotate:
+        fillcolor = params.get("background")
+        return image.rotate(
+            -params["angle"],
+            expand=params.get("expand", False),
+            fillcolor=fillcolor,
+        )
+
+    if transformation_type == TransformationType.blur:
+        radius = params["blur_radius"]
+        if params["blur_mode"] == BlurMode.box:
+            return image.filter(ImageFilter.BoxBlur(radius))
+        return image.filter(ImageFilter.GaussianBlur(radius))
+
+    if transformation_type == TransformationType.grayscale:
+        return image.convert("L").convert("RGB")
+
+    create_exception(
+        PhotoTransformationMessage.unsupported_transformation_type.value
+    )
+
+
+async def build_preview_response(
+    photo: Photo,
+    transformation_type: TransformationType,
+    params: dict,
+) -> StreamingResponse:
+    """Build a preview image response for a transformed photo.
+
+    The function downloads the original image, applies the requested
+    transformation locally with Pillow, and returns the resulting image as a
+    streamed JPEG response.
+    """
+
+    original_bytes = await download_original_photo(photo)
+    image = Image.open(BytesIO(original_bytes)).convert("RGB")
+
+    preview_image = apply_preview_transformation(
+        image=image,
+        transformation_type=transformation_type,
+        params=params,
+    )
+
+    output = BytesIO()
+    preview_image.save(output, format=PREVIEW_IMAGE_FORMAT)
+    output.seek(0)
+
+    return StreamingResponse(output, media_type=PREVIEW_MEDIA_TYPE)
+
+
+def build_cloudinary_transformation_options(
+    transformation_type: TransformationType,
+    params: dict,
+) -> list[dict]:
+    """Build Cloudinary transformation options from normalized params.
+
+    The function converts validated transformation parameters into the
+    Cloudinary transformation format used to generate final saved image
+    URLs for the supported transformation types.
+    """
+
+    if transformation_type == TransformationType.resize:
+        return [
+            {
+                "width": params["width"],
+                "height": params["height"],
+                "crop": CLOUDINARY_CROP_FILL,
+            }
+        ]
+
+    if transformation_type == TransformationType.crop:
+        return [
+            {
+                "width": params["width"],
+                "height": params["height"],
+                "x": params["x"],
+                "y": params["y"],
+                "crop": CLOUDINARY_CROP_CROP,
+            }
+        ]
+
+    if transformation_type == TransformationType.rotate:
+        options = [{"angle": params["angle"]}]
+        if params.get("background"):
+            options[0]["background"] = params["background"]
+        return options
+
+    if transformation_type == TransformationType.blur:
+        # Cloudinary blur strength is represented as an effect string.
+        return [{"effect": f"blur:{params['blur_radius'] * 100}"}]
+
+    if transformation_type == TransformationType.grayscale:
+        return [{"effect": CLOUDINARY_EFFECT_GRAYSCALE}]
+
+    create_exception(
+        PhotoTransformationMessage.unsupported_transformation_type.value
+    )
+
+
+def build_transformed_photo_url(
+    photo: Photo,
+    transformation_type: TransformationType,
+    params: dict,
+) -> str:
+    """Build and return a Cloudinary URL for a transformed version of the photo."""
+
+    transformation = build_cloudinary_transformation_options(
+        transformation_type=transformation_type,
+        params=params,
+    )
+
+    return cloudinary.CloudinaryImage(photo.public_id).build_url(
+        transformation=transformation
+    )
+
+
+async def generate_qr_code_url(
+    transformed_url: str,
+    photo_id: int,
+    user_id: int,
+) -> str:
+    """Generate a QR code image for a transformed URL and upload it to Cloudinary.
+
+    The function creates a QR code that points to the transformed image URL,
+    serializes it into an in-memory PNG image, uploads that image to
+    Cloudinary under a user-specific public identifier, and returns the final
+    QR code URL.
+    """
+
+    # Generate the QR image in memory so it can be uploaded to Cloudinary
+    # without writing any temporary file to local disk.
+    qr_image = qrcode.make(transformed_url)
+    buffer = BytesIO()
+    qr_image.save(buffer, format=QR_IMAGE_FORMAT)
+    buffer.seek(0)
+
+    qr_public_id = f"photo_share/qr_codes/{user_id}/{photo_id}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+
+    try:
+        result = cloudinary.uploader.upload(
+            buffer,
+            public_id=qr_public_id,
+            resource_type=CLOUDINARY_IMAGE_RESOURCE_TYPE,
+        )
+    except Exception as err:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=HTTPStatusMessages.failed_apload_qr_to_Cloudinary.value,
+        ) from err
+
+    return result["secure_url"]
