@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class BaseTagSchema(BaseModel):
@@ -12,7 +13,7 @@ class BaseTagSchema(BaseModel):
 class AddTagsSchema(BaseModel):
     """Request schema for adding multiple tags to a photo."""
 
-    tags: list[BaseTagSchema]
+    tags: list[Annotated[str, StringConstraints(max_length=50)]]
 
 
 class TagResponseShema(BaseTagSchema):

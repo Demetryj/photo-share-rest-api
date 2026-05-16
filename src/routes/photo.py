@@ -18,14 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.messages import HTTPStatusMessages
 from src.database.db import get_db
-from src.entity.photo import Tag
 from src.entity.user import Role, User
 from src.repository import photo as repository_photo
 from src.repository import user as repository_user
 from src.schemas.photo import (
+    AddTagsSchema,
     PaginatedPhotoResponseSchema,
     PhotoResponseSchema,
-    TagResponseShema,
     UpdatePhotoDescriptionSchema,
 )
 from src.services import photo as photo_service
@@ -72,32 +71,12 @@ async def upload_photo(
     binary file to Cloudinary, saves the resulting photo record in the
     database, and returns a response payload with tag names.
     """
-    try:
-        # Normalize user-provided tag names early, so invalid tag input fails
-        # before we upload anything to Cloudinary or write to the database.
-        normalized_tags = photo_service.normalize_image_tags(tags)
-    except ValueError as err:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(err),
-        ) from err
-
     # Validate the uploaded binary and reset the file pointer before upload.
     await photo_service.validate_image_file(file=file)
 
-    # Reuse existing tags when possible; create missing ones in the same
-    # transaction so the final photo save can commit everything together.
-    tag_list: list[Tag] = [
-        await repository_photo.get_or_create_tag(tag=tag, db=db)
-        for tag in normalized_tags
-    ]
-
-    # Build response tag schemas before `create_photo()` commits the session,
-    # because ORM tag objects may be expired after commit and trigger async
-    # lazy loading when Pydantic tries to read their attributes.
-    tags_for_resp = [
-        TagResponseShema.model_validate(tag) for tag in tag_list
-    ]
+    tag_list, tags_for_resp = await photo_service.prepare_photo_tags(
+        tags=tags, db=db
+    )
 
     # Build a unique Cloudinary public_id per photo for stable storage and
     # future operations like delete or transformation generation.
@@ -270,3 +249,40 @@ async def update_photo_description(
     )
 
     return photo_service.build_photo_response(photo=updated_photo)
+
+
+@router.patch(
+    "/{photo_id}/tags",
+    response_model=PhotoResponseSchema,
+    description="Replace the tags of a photo with up to 5 tags. Accessible by the photo owner or an admin.",
+)
+async def add_photo_tags(
+    photo_id: int,
+    body: AddTagsSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+) -> PhotoResponseSchema:
+    """Replace the tags of a photo for the owner or an admin.
+
+    The endpoint fetches the target photo by its identifier, checks that it
+    exists, verifies that the current user is either the photo owner or an
+    administrator, normalizes and resolves up to 5 provided tags, replaces
+    any previously linked tags, and returns the updated serialized photo
+    data.
+    """
+
+    photo = await photo_service.get_photo_for_owner_or_admin(
+        photo_id=photo_id, current_user=current_user, db=db
+    )
+
+    tag_list, tags_for_resp = await photo_service.prepare_photo_tags(
+        tags=body.tags, db=db
+    )
+
+    updated_photo = await repository_photo.add_photo_tags(
+        photo=photo, tags=tag_list, db=db
+    )
+
+    return photo_service.build_photo_response(
+        photo=updated_photo, tags=tags_for_resp
+    )

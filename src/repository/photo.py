@@ -135,3 +135,20 @@ async def update_photo_description(
     await db.refresh(photo)
 
     return photo
+
+
+async def add_photo_tags(
+    photo: Photo, tags: list[Tag], db: AsyncSession
+) -> Photo:
+    """Replace the tags of a persisted photo and return the updated object.
+
+    The function assigns a new list of tag entities to the target photo,
+    replacing any previously linked tags, commits the change to the
+    database, refreshes the ORM object, and returns the updated photo.
+    """
+
+    photo.tags = tags
+    await db.commit()
+    await db.refresh(photo)
+
+    return photo

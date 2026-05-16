@@ -128,6 +128,44 @@ def normalize_image_tags(tags: list[str] | None) -> list[str]:
     return normalized_tags
 
 
+async def prepare_photo_tags(
+    tags: list[str] | None,
+    db: AsyncSession,
+) -> tuple[list[Tag], list[TagResponseShema]]:
+    """Normalize, resolve, and serialize photo tags for write operations.
+
+    The function validates and normalizes tag names, reuses existing tag
+    entities or creates missing ones, and builds response schemas before the
+    caller commits the parent photo change.
+    """
+
+    try:
+        # Normalize user-provided tag names early, so invalid tag input fails
+        # before we upload anything to Cloudinary or write to the database.
+        normalized_tags = normalize_image_tags(tags)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(err),
+        ) from err
+
+    # Reuse existing tags when possible; create missing ones in the same
+    # transaction so the final photo save can commit everything together.
+    tag_list: list[Tag] = [
+        await repository_photo.get_or_create_tag(tag=tag, db=db)
+        for tag in normalized_tags
+    ]
+
+    # Build response tag schemas before the final photo save commits the
+    # session, because ORM tag objects may be expired after commit and trigger
+    # async lazy loading when Pydantic tries to read their attributes.
+    tags_for_resp = [
+        TagResponseShema.model_validate(tag) for tag in tag_list
+    ]
+
+    return tag_list, tags_for_resp
+
+
 async def cloudinary_upload(file: UploadFile, public_id: str) -> str:
     """Upload an image file to Cloudinary and return its generated URL.
 
