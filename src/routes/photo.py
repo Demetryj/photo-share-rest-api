@@ -51,6 +51,15 @@ PhotoTags = Annotated[
     Form(description="Up to 5 tags (inclusive)"),
     Field(max_length=5),
 ]
+TargetUserId = Annotated[
+    int | None,
+    Form(
+        description=(
+            "Optional target user ID. Available only for admin users; "
+            "when omitted, the photo is uploaded for the current user."
+        ),
+    ),
+]
 
 
 # Upload photo
@@ -70,16 +79,26 @@ async def upload_photo(
     ),
     description: PhotoDescription = None,
     tags: PhotoTags = None,
+    user_id: TargetUserId = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user),
 ) -> PhotoResponseSchema:
     """Upload a photo, resolve its tags, and store its metadata.
 
-    The endpoint validates the uploaded image, normalizes the optional tag
-    names, reuses existing tag entities or creates missing ones, uploads the
-    binary file to Cloudinary, saves the resulting photo record in the
-    database, and returns a response payload with tag names.
+    The endpoint optionally lets an administrator upload a photo for another
+    existing user. It first validates that permission and target user
+    existence when ``user_id`` is provided, then validates the uploaded
+    image, normalizes the optional tag names, reuses existing tag entities or
+    creates missing ones, uploads the binary file to Cloudinary, saves the
+    resulting photo record in the database, and returns a response payload
+    with tag names.
     """
+    owner_id = await photo_service.resolve_photo_owner_id(
+        current_user=current_user,
+        db=db,
+        target_user_id=user_id,
+    )
+
     # Validate the uploaded binary and reset the file pointer before upload.
     await photo_service.validate_image_file(file=file)
 
@@ -90,16 +109,14 @@ async def upload_photo(
     # Build a unique Cloudinary public_id per photo for stable storage and
     # future operations like delete or transformation generation.
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    public_id = (
-        f"photo_share/{current_user.id}/{timestamp}_{uuid4().hex}"
-    )
+    public_id = f"photo_share/{owner_id}/{timestamp}_{uuid4().hex}"
     photo_url = await photo_service.cloudinary_upload(
         file=file, public_id=public_id
     )
 
     # Persist the photo metadata only after the external upload succeeds.
     new_photo = await repository_photo.create_photo(
-        user_id=current_user.id,
+        user_id=owner_id,
         public_id=public_id,
         photo_url=photo_url,
         description=description,
@@ -408,13 +425,13 @@ async def create_photo_transformation(
     qr_code_url = await photo_service.generate_qr_code_url(
         transformed_url=transformed_url,
         photo_id=photo.id,
-        user_id=current_user.id,
+        user_id=photo.owner_id,
     )
 
     transformation = (
         await repository_photo.create_photo_transformation(
             photo_id=photo.id,
-            user_id=current_user.id,
+            user_id=photo.owner_id,
             transformation_type=body.transformation_type,
             transformation_params=params,
             transformed_url=transformed_url,

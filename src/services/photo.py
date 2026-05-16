@@ -20,6 +20,7 @@ from src.config.settings import settings
 from src.entity.photo import BlurMode, Photo, Tag, TransformationType
 from src.entity.user import Role, User
 from src.repository import photo as repository_photo
+from src.repository import user as repository_user
 from src.schemas.photo import (
     PhotoResponseSchema,
     PhotoTransformationRequestSchema,
@@ -184,6 +185,41 @@ async def prepare_photo_tags(
     ]
 
     return tag_list, tags_for_resp
+
+
+async def resolve_photo_owner_id(
+    current_user: User,
+    db: AsyncSession,
+    target_user_id: int | None = None,
+) -> int:
+    """Resolve which user should own a newly uploaded photo.
+
+    The function returns the authenticated user's id by default. When a
+    ``target_user_id`` is provided, it allows the operation only for an
+    administrator, verifies that the target user exists, and then returns
+    that target user's id. This keeps the owner-resolution and permission
+    checks in one place for upload operations.
+    """
+
+    if target_user_id is None:
+        return current_user.id
+
+    if current_user.role != Role.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=HTTPStatusMessages.access_denied.value,
+        )
+
+    target_user = await repository_user.get_user_by_id(
+        user_id=target_user_id, db=db
+    )
+    if target_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=HTTPStatusMessages.not_found.value,
+        )
+
+    return target_user.id
 
 
 async def cloudinary_upload(file: UploadFile, public_id: str) -> str:
