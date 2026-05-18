@@ -8,7 +8,6 @@ from fastapi import (
     Depends,
     File,
     Form,
-    HTTPException,
     Query,
     UploadFile,
     status,
@@ -23,6 +22,7 @@ from src.config.messages import (
 )
 from src.database.db import get_db
 from src.entity.user import Role, User
+from src.helpers.create_exception import create_exception
 from src.repository import comment as repository_comment
 from src.repository import photo as repository_photo
 from src.repository import user as repository_user
@@ -196,15 +196,15 @@ async def get_all_photo_by_user_id(
     )
 
     if user is None:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=HTTPStatusMessages.not_found.value,
+            message=HTTPStatusMessages.not_found.value,
         )
 
     if user_id != current_user.id and current_user.role != Role.admin:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=HTTPStatusMessages.access_denied.value,
+            message=HTTPStatusMessages.access_denied.value,
         )
 
     photo_list = await repository_photo.get_photos_by_user_id(
@@ -541,9 +541,9 @@ async def get_photo_transformation_by_id(
     )
 
     if transformation is None:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=HTTPStatusMessages.not_found.value,
+            message=HTTPStatusMessages.not_found.value,
         )
 
     await photo_service.get_photo_for_owner_or_admin(

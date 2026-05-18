@@ -1,13 +1,12 @@
 import enum
 from datetime import datetime, timezone
 from io import BytesIO
-from typing import NoReturn
 
 import cloudinary
 import cloudinary.uploader
 import httpx
 import qrcode
-from fastapi import HTTPException, UploadFile, status
+from fastapi import UploadFile, status
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageFilter, UnidentifiedImageError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +18,7 @@ from src.config.messages import (
 from src.config.settings import settings
 from src.entity.photo import BlurMode, Photo, Tag, TransformationType
 from src.entity.user import Role, User
+from src.helpers.create_exception import create_exception
 from src.repository import photo as repository_photo
 from src.repository import user as repository_user
 from src.schemas.photo import (
@@ -84,9 +84,9 @@ async def validate_image_file(file: UploadFile) -> None:
 
     # Check the MIME type sent by the client before reading the file content.
     if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only JPEG, PNG, and WEBP images are allowed.",
+            message="Only JPEG, PNG, and WEBP images are allowed.",
         )
 
     # Read the uploaded file into memory once.
@@ -94,9 +94,9 @@ async def validate_image_file(file: UploadFile) -> None:
 
     # Reject files larger than the configured size limit.
     if len(content) > MAX_IMAGE_SIZE:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Image size must not exceed 1 MB.",
+            message="Image size must not exceed 1 MB.",
         )
 
     try:
@@ -106,9 +106,9 @@ async def validate_image_file(file: UploadFile) -> None:
         # Verify that the file is not corrupted and is a real image.
         image.verify()
     except (UnidentifiedImageError, OSError):
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file is not a valid image.",
+            message="Uploaded file is not a valid image.",
         )
 
     # Re-open the image after verify(), because Pillow leaves the object unusable.
@@ -116,9 +116,9 @@ async def validate_image_file(file: UploadFile) -> None:
 
     # Check the actual detected image format, not just the client-provided MIME type.
     if image.format not in ALLOWED_FORMATS:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only JPEG, PNG, and WEBP images are allowed.",
+            message="Only JPEG, PNG, and WEBP images are allowed.",
         )
 
     # Reset the file pointer so the file can be reused later, for example for upload to Cloudinary.
@@ -165,10 +165,10 @@ async def prepare_photo_tags(
         # before we upload anything to Cloudinary or write to the database.
         normalized_tags = normalize_image_tags(tags)
     except ValueError as err:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(err),
-        ) from err
+            message=str(err),
+        )
 
     # Reuse existing tags when possible; create missing ones in the same
     # transaction so the final photo save can commit everything together.
@@ -205,18 +205,18 @@ async def resolve_photo_owner_id(
         return current_user.id
 
     if current_user.role != Role.admin:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=HTTPStatusMessages.access_denied.value,
+            message=HTTPStatusMessages.access_denied.value,
         )
 
     target_user = await repository_user.get_user_by_id(
         user_id=target_user_id, db=db
     )
     if target_user is None:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=HTTPStatusMessages.not_found.value,
+            message=HTTPStatusMessages.not_found.value,
         )
 
     return target_user.id
@@ -235,11 +235,11 @@ async def cloudinary_upload(file: UploadFile, public_id: str) -> str:
         res = cloudinary.uploader.upload(
             file.file, public_id=public_id
         )
-    except Exception as err:
-        raise HTTPException(
+    except Exception:
+        create_exception(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=HTTPStatusMessages.failed_apload_photo_to_Cloudinary.value,
-        ) from err
+            message=HTTPStatusMessages.failed_apload_photo_to_Cloudinary.value,
+        )
 
     res_url = cloudinary.CloudinaryImage(public_id).build_url(
         version=res.get("version")
@@ -253,16 +253,16 @@ async def cloudinary_delete(public_id: str) -> None:
 
     try:
         result = cloudinary.uploader.destroy(public_id)
-    except Exception as err:
-        raise HTTPException(
+    except Exception:
+        create_exception(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=HTTPStatusMessages.failed_delete_photo_from_Cloudinary.value,
-        ) from err
+            message=HTTPStatusMessages.failed_delete_photo_from_Cloudinary.value,
+        )
 
     if result.get("result") not in {"ok", "not found"}:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=HTTPStatusMessages.failed_delete_photo_from_Cloudinary.value,
+            message=HTTPStatusMessages.failed_delete_photo_from_Cloudinary.value,
         )
 
 
@@ -280,9 +280,9 @@ def check_photo_owner_or_admin_access(
         photo.owner_id != current_user.id
         and current_user.role != Role.admin
     ):
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=HTTPStatusMessages.access_denied.value,
+            message=HTTPStatusMessages.access_denied.value,
         )
 
 
@@ -303,9 +303,9 @@ async def get_photo_for_owner_or_admin(
     )
 
     if photo is None:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=HTTPStatusMessages.not_found.value,
+            message=HTTPStatusMessages.not_found.value,
         )
 
     # Allow access only for the owner of the target photo or an admin.
@@ -340,18 +340,6 @@ def build_photo_response(
         comments_count=(
             comments_count if comments_count is not None else 0
         ),
-    )
-
-
-def create_exception(
-    message: PhotoTransformationMessage | str,
-    status_code: int = status.HTTP_400_BAD_REQUEST,
-) -> NoReturn:
-    """Raise an HTTP exception with the provided status code and message."""
-
-    raise HTTPException(
-        status_code=status_code,
-        detail=message,
     )
 
 
@@ -596,10 +584,10 @@ async def generate_qr_code_url(
             public_id=qr_public_id,
             resource_type=CLOUDINARY_IMAGE_RESOURCE_TYPE,
         )
-    except Exception as err:
-        raise HTTPException(
+    except Exception:
+        create_exception(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=HTTPStatusMessages.failed_apload_qr_to_Cloudinary.value,
-        ) from err
+            message=HTTPStatusMessages.failed_apload_qr_to_Cloudinary.value,
+        )
 
     return result["secure_url"]

@@ -20,6 +20,7 @@ class HTTPStatusMessages(Enum):
     not_found = "Not found"
     forbidden = "Forbidden"
     access_denied = "Access denied"
+    operation_forbidden = "Operation forbidden"
 
     failed_apload_photo_to_Cloudinary = (
         "Failed to upload photo to Cloudinary."
@@ -41,6 +42,8 @@ class EmailMessages(Enum):
 
 
 OWNER_OR_ADMIN_ACCESS = "Accessible by the photo owner or an admin."
+AUTHENTICATED_USERS_ACCESS = "Available for authenticated users."
+STAFF_ACCESS = "Available for administrators and moderators."
 
 
 class PhotoTransformationMessage(Enum):

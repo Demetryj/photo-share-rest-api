@@ -12,6 +12,7 @@ from src.config.messages import HTTPStatusMessages
 from src.config.settings import settings
 from src.database.db import get_db
 from src.entity.user import User
+from src.helpers.create_exception import create_exception
 from src.repository import auth as repository_auth
 from src.repository import user as repository_user
 
@@ -198,9 +199,9 @@ class AuthService:
                 raise credentials_exception
             return email
         except JWTError:
-            raise HTTPException(
+            create_exception(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=HTTPStatusMessages.invalid_token_for_email_verification.value,
+                message=HTTPStatusMessages.invalid_token_for_email_verification.value,
             )
 
     # Validate access token, authorize request, and resolve current user.

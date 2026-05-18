@@ -14,6 +14,7 @@ from src.config.messages import EmailMessages, HTTPStatusMessages
 from src.config.settings import settings
 from src.database.db import get_db
 from src.entity.user import User
+from src.helpers.create_exception import create_exception
 from src.repository import auth as repository_auth
 from src.repository import user as repository_user
 from src.schemas.auth import RequestEmail, SignInResponse
@@ -53,9 +54,9 @@ async def register(
     )
 
     if user:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_409_CONFLICT,
-            detail=HTTPStatusMessages.account_already_exists.value,
+            message=HTTPStatusMessages.account_already_exists.value,
         )
 
     body.password = auth_service.create_hashed_password(body.password)
@@ -102,24 +103,24 @@ async def login(
         email=body.email, db=db
     )
     if user is None:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=HTTPStatusMessages.invalid_email_or_password.value,
+            message=HTTPStatusMessages.invalid_email_or_password.value,
         )
 
     if not user.confirmed:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=HTTPStatusMessages.email_not_confirmed.value,
+            message=HTTPStatusMessages.email_not_confirmed.value,
         )
 
     is_match_passwords = auth_service.verify_password(
         plain_password=body.password, hashed_password=user.password
     )
     if not is_match_passwords:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=HTTPStatusMessages.invalid_email_or_password.value,
+            message=HTTPStatusMessages.invalid_email_or_password.value,
         )
 
     # Generate JWT
@@ -228,9 +229,9 @@ async def confirm_email(
     user = await repository_user.get_user_by_email(email=email, db=db)
 
     if user is None:
-        raise HTTPException(
+        create_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=HTTPStatusMessages.verification_error.value,
+            message=HTTPStatusMessages.verification_error.value,
         )
 
     if user.confirmed:

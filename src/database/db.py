@@ -32,8 +32,13 @@ class DatabaseSessionManager:
         """
 
         self._engine: AsyncEngine | None = create_async_engine(db_url)
-        self._session_maker: async_sessionmaker | None = async_sessionmaker(
-            autoflush=False, autocommit=False, bind=self._engine
+        self._session_maker: async_sessionmaker | None = (
+            async_sessionmaker(
+                autoflush=False,
+                autocommit=False,
+                bind=self._engine,
+                expire_on_commit=False,
+            )
         )
 
     @asynccontextmanager

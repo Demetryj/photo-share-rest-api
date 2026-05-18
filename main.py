@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config.handlers import validation_exception_handler
 from src.config.middlewares import setup_cors
 from src.database.db import get_db
-from src.routes import auth, photo
+from src.helpers.create_exception import create_exception
+from src.routes import auth, comment, photo
 
 app = FastAPI()
 
@@ -28,6 +29,7 @@ app.add_exception_handler(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(photo.router, prefix="/api")
+app.include_router(comment.router, prefix="/api")
 
 
 @app.get("/")
@@ -46,13 +48,14 @@ async def healthchecker(db: AsyncSession = Depends(get_db)):
         result = await db.execute(text("SELECT 1 + 1"))
         result = result.fetchone()
         if result is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Database is not configured correctly",
+            create_exception(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="Database is not configured correctly",
             )
         return {"message": "Welcome to FastAPI!"}
     except SQLAlchemyError:
         logger.exception("Healthcheck database query failed")
-        raise HTTPException(
-            status_code=500, detail="Error connecting to the database"
+        create_exception(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Error connecting to the database",
         )
