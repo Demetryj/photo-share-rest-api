@@ -37,6 +37,7 @@ class PhotoResponseSchema(BaseModel):
     image_url: str
     tags: list[TagResponseShema]
     created_at: datetime
+    comments_count: int
 
 
 class PaginatedPhotoResponseSchema(BaseModel):

@@ -23,6 +23,7 @@ from src.config.messages import (
 )
 from src.database.db import get_db
 from src.entity.user import Role, User
+from src.repository import comment as repository_comment
 from src.repository import photo as repository_photo
 from src.repository import user as repository_user
 from src.schemas.photo import (
@@ -125,7 +126,7 @@ async def upload_photo(
     )
 
     return photo_service.build_photo_response(
-        new_photo, tags_for_resp
+        photo=new_photo, tags=tags_for_resp
     )
 
 
@@ -153,7 +154,15 @@ async def get_photo_by_photo_id(
         photo_id=photo_id, current_user=current_user, db=db
     )
 
-    return photo_service.build_photo_response(photo)
+    comments_count = (
+        await repository_comment.get_total_number_of_comments(
+            photo_id=photo_id, db=db
+        )
+    )
+
+    return photo_service.build_photo_response(
+        photo=photo, comments_count=comments_count
+    )
 
 
 # Get all user photos by user ID
@@ -202,10 +211,17 @@ async def get_all_photo_by_user_id(
         user_id=user_id, limit=per_page, offset=offset, db=db
     )
 
-    resp_photos = [
-        photo_service.build_photo_response(photo)
-        for photo in photo_list
-    ]
+    resp_photos = []
+    for photo in photo_list:
+        comments_count = (
+            await repository_comment.get_total_number_of_comments(
+                photo_id=photo.id, db=db
+            )
+        )
+        item = photo_service.build_photo_response(
+            photo=photo, comments_count=comments_count
+        )
+        resp_photos.append(item)
 
     total_photos = await repository_photo.get_total_number_of_photos(
         user_id=user_id, db=db
@@ -284,7 +300,15 @@ async def update_photo_description(
         photo=photo, description=body.description, db=db
     )
 
-    return photo_service.build_photo_response(photo=updated_photo)
+    comments_count = (
+        await repository_comment.get_total_number_of_comments(
+            photo_id=photo_id, db=db
+        )
+    )
+
+    return photo_service.build_photo_response(
+        photo=updated_photo, comments_count=comments_count
+    )
 
 
 @router.patch(
@@ -322,8 +346,16 @@ async def add_photo_tags(
         photo=photo, tags=tag_list, db=db
     )
 
+    comments_count = (
+        await repository_comment.get_total_number_of_comments(
+            photo_id=photo_id, db=db
+        )
+    )
+
     return photo_service.build_photo_response(
-        photo=updated_photo, tags=tags_for_resp
+        photo=updated_photo,
+        tags=tags_for_resp,
+        comments_count=comments_count,
     )
 
 
