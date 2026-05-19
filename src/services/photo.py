@@ -39,7 +39,8 @@ class ImageFormat(enum.Enum):
     webp = "webp"
 
 
-MAX_IMAGE_SIZE = 1 * 1024 * 1024  # 1 MB limit
+MAX_IMAGE_SIZE = 1
+MAX_IMAGE_SIZE_MB = MAX_IMAGE_SIZE * 1024 * 1024  # 1 MB limit
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
@@ -95,10 +96,10 @@ async def validate_image_file(file: UploadFile) -> None:
     content = await file.read()
 
     # Reject files larger than the configured size limit.
-    if len(content) > MAX_IMAGE_SIZE:
+    if len(content) > MAX_IMAGE_SIZE_MB:
         create_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
-            message="Image size must not exceed 1 MB.",
+            message=f"Image size must not exceed {MAX_IMAGE_SIZE} MB.",
         )
 
     try:
@@ -578,7 +579,7 @@ async def generate_qr_code_url(
     qr_image.save(buffer, format=QR_IMAGE_FORMAT)
     buffer.seek(0)
 
-    qr_public_id = f"photo_share/qr_codes/{user_id}/{photo_id}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    qr_public_id = f"{settings.CLOUDINARY_PUBLIC_ID_PREFIX}/qr_codes/{user_id}/{photo_id}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
     try:
         result = cloudinary.uploader.upload(

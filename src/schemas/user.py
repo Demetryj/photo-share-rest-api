@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime
+from enum import Enum
 
 from pydantic import (
     BaseModel,
@@ -12,13 +13,11 @@ from pydantic import (
     field_validator,
 )
 
+from src.config.messages import UserValidationMessages
 from src.entity.user import Role
 
-SPECIAL_CHARS = "!@#$%^&*"
+PASSWORD_SPECIAL_CHARS = "!@#$%^&*"
 USERNAME_PATTERN = re.compile(r"^[a-z](?:[a-z0-9_]*[a-z0-9])?$")
-DISPLAY_NAME_PATTERN = re.compile(
-    r"^[^\W\d_][^\W\d_'\- ]*$", re.UNICODE
-)
 
 
 class BaseAuthUserRequestSchema(BaseModel):
@@ -30,7 +29,7 @@ class BaseAuthUserRequestSchema(BaseModel):
         max_length=16,
         description=(
             "Password must contain at least one lowercase letter, one uppercase "
-            f"letter, one digit, and one special character from {SPECIAL_CHARS}."
+            f"letter, one digit, and one special character from {PASSWORD_SPECIAL_CHARS}."
         ),
     )
 
@@ -39,20 +38,19 @@ class BaseAuthUserRequestSchema(BaseModel):
     def validate_password(cls, value: str) -> str:
         if not any(ch.islower() for ch in value):
             raise ValueError(
-                "Password must contain at least one lowercase letter."
+                UserValidationMessages.password_requires_lowercase.value
             )
         if not any(ch.isupper() for ch in value):
             raise ValueError(
-                "Password must contain at least one uppercase letter."
+                UserValidationMessages.password_requires_uppercase.value
             )
         if not any(ch.isdigit() for ch in value):
             raise ValueError(
-                "Password must contain at least one digit."
+                UserValidationMessages.password_requires_digit.value
             )
-        if not any(ch in SPECIAL_CHARS for ch in value):
+        if not any(ch in PASSWORD_SPECIAL_CHARS for ch in value):
             raise ValueError(
-                "Password must contain at least one special character: "
-                f"{SPECIAL_CHARS}."
+                f"{UserValidationMessages.password_requires_special_character.value} {PASSWORD_SPECIAL_CHARS}."
             )
         return value
 
@@ -67,40 +65,9 @@ class SignUpRequestSchema(BaseAuthUserRequestSchema):
     def validate_username(cls, value: str) -> str:
         if not USERNAME_PATTERN.fullmatch(value):
             raise ValueError(
-                "Username must start with a lowercase letter and contain "
-                "only lowercase letters, digits, and underscores, and it "
-                "must not end with an underscore."
+                UserValidationMessages.username_has_invalid_format.value
             )
         return value
-
-
-class UpdateMyProfileRequestSchema(BaseModel):
-    """Schema for updating editable fields of the current user."""
-
-    email: EmailStr | None = None
-    display_name: str | None = Field(
-        default=None, min_length=2, max_length=60
-    )
-    avatar: HttpUrl | None = None
-
-    @field_validator("display_name")
-    @classmethod
-    def validate_display_name(cls, value: str | None) -> str | None:
-        if value is None:
-            return value
-
-        normalized_value = value.strip()
-
-        if not normalized_value:
-            raise ValueError("Display name must not be empty.")
-
-        if not DISPLAY_NAME_PATTERN.fullmatch(normalized_value):
-            raise ValueError(
-                "Display name may contain only letters, spaces, hyphens, "
-                "and apostrophes."
-            )
-
-        return normalized_value
 
 
 class SignUpResponseSchema(BaseModel):
@@ -117,8 +84,8 @@ class SignUpResponseSchema(BaseModel):
     updated_at: datetime
 
 
-class ProfileResponseSchema(BaseModel):
-    """User profile response schema."""
+class PublicProfileResponseSchema(BaseModel):
+    """Public user profile response schema."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -137,11 +104,58 @@ class MyProfileResponseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    display_name: str | None = None
+    avatar: HttpUrl | None
+
+
+class MyUserInfoResponseSchema(BaseModel):
+    """Response schema for detailed information about the current user."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
     username: str
     display_name: str | None = None
     email: EmailStr
     avatar: HttpUrl | None
     role: Role
     confirmed: bool
+    photos_count: int = 0
+    comments_count: int = 0
     created_at: datetime
+    updated_at: datetime
+
+
+class PaginatedUsersResponseSchema(BaseModel):
+    """Response schema for a paginated list of public user profiles."""
+
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    items: list[PublicProfileResponseSchema]
+
+
+class AssignableRole(str, Enum):
+    """User roles that administrators are currently allowed to assign."""
+
+    user = Role.user.value
+    moderator = Role.moderator.value
+
+
+class UserRoleRequestSchema(BaseModel):
+    """Request schema for changing a user's role."""
+
+    role: AssignableRole
+
+
+class UserRoleResponseSchema(BaseModel):
+    """Response schema for a user whose role was updated by an administrator."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    email: EmailStr
+    role: AssignableRole
     updated_at: datetime

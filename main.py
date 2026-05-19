@@ -12,7 +12,7 @@ from src.config.handlers import validation_exception_handler
 from src.config.middlewares import setup_cors
 from src.database.db import get_db
 from src.helpers.create_exception import create_exception
-from src.routes import auth, comment, photo
+from src.routes import auth, comment, photo, user
 
 app = FastAPI()
 
@@ -28,6 +28,7 @@ app.add_exception_handler(
 
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(user.router, prefix="/api")
 app.include_router(photo.router, prefix="/api")
 app.include_router(comment.router, prefix="/api")
 

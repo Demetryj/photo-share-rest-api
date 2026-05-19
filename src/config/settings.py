@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     CLOUDINARY_NAME: str
     CLOUDINARY_API_KEY: int
     CLOUDINARY_API_SECRET: str
+    CLOUDINARY_PUBLIC_ID_PREFIX: str = "photo_share"
 
     # TODO при деплої Значення має бути True.
     # Встановити відповідне значення в env.

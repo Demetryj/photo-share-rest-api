@@ -17,28 +17,20 @@ from src.config.messages import (
     HTTPStatusMessages,
 )
 from src.database.db import get_db
-from src.entity.user import Role, User
+from src.entity.user import User
 from src.helpers.create_exception import create_exception
 from src.repository import comment as repository_comment
 from src.schemas.comment import (
     CommentRequestSchema,
     CommentResponseSchema,
-    PaginatedPhotoResponseSchema,
+    PaginatedCommentResponseSchema,
 )
 from src.services.auth import auth_service
 from src.services.comment import (
     build_comment_response,
     get_photo_or_404,
 )
-from src.services.role import RoleAccess
-
-# Reusable RBAC dependency for read endpoints; allows admin/moderator/user roles.
-staff_only = RoleAccess([Role.admin, Role.moderator])
-user_owner_only = RoleAccess([Role.user])
-authenticated_users = RoleAccess(
-    [Role.admin, Role.moderator, Role.user]
-)
-
+from src.services.role import authenticated_users, staff_only
 
 router = APIRouter(prefix="/photos", tags=["comments"])
 
@@ -75,7 +67,7 @@ async def create_comment_to_photo(
 # Get all comments by photo ID
 @router.get(
     "/{photo_id}/comments",
-    response_model=PaginatedPhotoResponseSchema,
+    response_model=PaginatedCommentResponseSchema,
     description=(
         "Return a paginated list of comments for the specified photo.\n\n"
         f"{AUTHENTICATED_USERS_ACCESS}"
@@ -87,7 +79,6 @@ async def get_all_comments_by_photo_id(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(auth_service.get_current_user),
 ):
     """Return a paginated list of comments for the specified photo."""
 
@@ -105,10 +96,8 @@ async def get_all_comments_by_photo_id(
         for comment in comment_list
     ]
 
-    total_comments = (
-        await repository_comment.get_total_number_of_comments(
-            photo_id=photo.id, db=db
-        )
+    total_comments = await repository_comment.get_total_number_of_comments_on_photo(
+        photo_id=photo.id, db=db
     )
     total_pages = (
         math.ceil(total_comments / per_page) if total_comments else 0

@@ -8,12 +8,22 @@ from src.entity.comment import Comment
 from src.schemas.comment import CommentRequestSchema
 
 
-async def get_total_number_of_comments(
+async def get_total_number_of_comments_on_photo(
     photo_id: int, db: AsyncSession
 ) -> int:
     """Return the total number of comments linked to the given photo."""
 
     stmt = select(func.count(Comment.id)).filter_by(photo_id=photo_id)
+    total = await db.scalar(stmt)
+    return total
+
+
+async def get_total_number_of_comments(
+    user_id: int, db: AsyncSession
+) -> int:
+    """Return the total number of comments linked to all photos."""
+
+    stmt = select(func.count(Comment.id)).filter_by(user_id=user_id)
     total = await db.scalar(stmt)
     return total
 

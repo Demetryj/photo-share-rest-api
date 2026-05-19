@@ -21,6 +21,7 @@ class HTTPStatusMessages(Enum):
     forbidden = "Forbidden"
     access_denied = "Access denied"
     operation_forbidden = "Operation forbidden"
+    bad_request = "Bad request"
 
     failed_apload_photo_to_Cloudinary = (
         "Failed to upload photo to Cloudinary."
@@ -39,6 +40,24 @@ class EmailMessages(Enum):
     email_confirmed = "Email confirmed"
     email_already_confirmed = "Your email is already confirmed."
     check_email_forconfirmation = "Check your email for confirmation."
+
+
+class UserValidationMessages(Enum):
+    password_requires_lowercase = (
+        "Password must contain at least one lowercase letter."
+    )
+    password_requires_uppercase = (
+        "Password must contain at least one uppercase letter."
+    )
+    password_requires_digit = (
+        "Password must contain at least one digit."
+    )
+    password_requires_special_character = (
+        "Password must contain at least one special character: "
+    )
+    username_has_invalid_format = "Username must start with a lowercase letter and contain only lowercase letters, digits, and underscores, and it must not end with an underscore."
+    display_name_must_not_be_empty = "Display name must not be empty."
+    display_name_contains_invalid_characters = "Display name may contain only letters, spaces, hyphens, and apostrophes."
 
 
 OWNER_OR_ADMIN_ACCESS = "Accessible by the photo owner or an admin."

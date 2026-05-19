@@ -32,3 +32,11 @@ class RoleAccess:
                 status_code=status.HTTP_403_FORBIDDEN,
                 message=HTTPStatusMessages.operation_forbidden.value,
             )
+
+
+# Reusable RBAC dependency for read endpoints; allows admin/moderator/user roles.
+staff_only = RoleAccess([Role.admin, Role.moderator])
+admin_only = RoleAccess([Role.admin])
+authenticated_users = RoleAccess(
+    [Role.admin, Role.moderator, Role.user]
+)

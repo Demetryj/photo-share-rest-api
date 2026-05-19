@@ -22,6 +22,7 @@ from src.config.messages import (
     OWNER_OR_ADMIN_ACCESS,
     HTTPStatusMessages,
 )
+from src.config.settings import settings
 from src.database.db import get_db
 from src.entity.user import Role, User
 from src.helpers.create_exception import create_exception
@@ -78,7 +79,7 @@ TargetUserId = Annotated[
 async def upload_photo(
     file: UploadFile = File(
         ...,
-        description=f"Image file. Max size: {int(photo_service.MAX_IMAGE_SIZE / (1024 * 1024))} MB. Allowed formats: {photo_service.ALLOWED_FORMATS}",
+        description=f"Image file. Max size: {photo_service.MAX_IMAGE_SIZE} MB. Allowed formats: {photo_service.ALLOWED_FORMATS}",
     ),
     description: PhotoDescription = None,
     tags: PhotoTags = None,
@@ -112,7 +113,7 @@ async def upload_photo(
     # Build a unique Cloudinary public_id per photo for stable storage and
     # future operations like delete or transformation generation.
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    public_id = f"photo_share/{owner_id}/{timestamp}_{uuid4().hex}"
+    public_id = f"{settings.CLOUDINARY_PUBLIC_ID_PREFIX}/{owner_id}/{timestamp}_{uuid4().hex}"
     photo_url = await photo_service.cloudinary_upload(
         file=file, public_id=public_id
     )
@@ -156,10 +157,8 @@ async def get_photo_by_photo_id(
         photo_id=photo_id, current_user=current_user, db=db
     )
 
-    comments_count = (
-        await repository_comment.get_total_number_of_comments(
-            photo_id=photo_id, db=db
-        )
+    comments_count = await repository_comment.get_total_number_of_comments_on_photo(
+        photo_id=photo_id, db=db
     )
 
     return photo_service.build_photo_response(
@@ -215,10 +214,8 @@ async def get_all_photo_by_user_id(
 
     resp_photos = []
     for photo in photo_list:
-        comments_count = (
-            await repository_comment.get_total_number_of_comments(
-                photo_id=photo.id, db=db
-            )
+        comments_count = await repository_comment.get_total_number_of_comments_on_photo(
+            photo_id=photo.id, db=db
         )
         item = photo_service.build_photo_response(
             photo=photo, comments_count=comments_count
@@ -302,10 +299,8 @@ async def update_photo_description(
         photo=photo, description=body.description, db=db
     )
 
-    comments_count = (
-        await repository_comment.get_total_number_of_comments(
-            photo_id=photo_id, db=db
-        )
+    comments_count = await repository_comment.get_total_number_of_comments_on_photo(
+        photo_id=photo_id, db=db
     )
 
     return photo_service.build_photo_response(
@@ -348,10 +343,8 @@ async def add_photo_tags(
         photo=photo, tags=tag_list, db=db
     )
 
-    comments_count = (
-        await repository_comment.get_total_number_of_comments(
-            photo_id=photo_id, db=db
-        )
+    comments_count = await repository_comment.get_total_number_of_comments_on_photo(
+        photo_id=photo_id, db=db
     )
 
     return photo_service.build_photo_response(

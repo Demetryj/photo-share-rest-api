@@ -33,7 +33,7 @@ class CommentResponseSchema(BaseModel):
     user: CommentUserSchema
 
 
-class PaginatedPhotoResponseSchema(BaseModel):
+class PaginatedCommentResponseSchema(BaseModel):
     """Response schema for a paginated list of photo comments."""
 
     page: int
