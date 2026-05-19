@@ -1,3 +1,5 @@
+"""Pydantic schemas for authentication-related request and response payloads."""
+
 from pydantic import BaseModel, EmailStr
 
 

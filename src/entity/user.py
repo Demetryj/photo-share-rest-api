@@ -34,7 +34,12 @@ class User(Base, LastModifiedMixin):
     id: Mapped[int] = mapped_column(
         primary_key=True, autoincrement=True, index=True
     )
-    username: Mapped[str] = mapped_column(String(60), nullable=False)
+    username: Mapped[str] = mapped_column(
+        String(30), nullable=False, unique=True
+    )
+    display_name: Mapped[str | None] = mapped_column(
+        String(60), nullable=True
+    )
     email: Mapped[str] = mapped_column(
         String(150), nullable=False, unique=True
     )
@@ -54,9 +59,8 @@ class User(Base, LastModifiedMixin):
         "RefreshToken", backref="user", cascade="all, delete-orphan"
     )
 
-    # Separate table for refresh tokens: one user can sign in from multiple devices,
 
-
+# Separate table for refresh tokens: one user can sign in from multiple devices,
 # so each device/session gets its own refresh token row.
 class RefreshToken(Base, LastModifiedMixin):
     """Refresh token issued for a specific user session or device."""

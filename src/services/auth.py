@@ -1,3 +1,5 @@
+"""Authentication service helpers for passwords, JWTs, and current-user lookup."""
+
 import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -18,6 +20,7 @@ from src.repository import user as repository_user
 
 
 class AuthService:
+    """Application authentication service for passwords, JWTs, and user lookup."""
 
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     SECRET_KEY = settings.secret_key

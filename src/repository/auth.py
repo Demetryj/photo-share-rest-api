@@ -1,3 +1,5 @@
+"""Repository helpers for persisted refresh-token session records."""
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

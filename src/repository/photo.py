@@ -1,3 +1,5 @@
+"""Repository helpers for photos, tags, and saved transformations."""
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload

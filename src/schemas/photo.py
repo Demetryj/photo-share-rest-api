@@ -1,3 +1,5 @@
+"""Pydantic schemas for photo, tag, and transformation API payloads."""
+
 from datetime import datetime
 from typing import Annotated
 

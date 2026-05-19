@@ -1,3 +1,5 @@
+"""FastAPI routes for user authentication and email confirmation flows."""
+
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -18,7 +20,11 @@ from src.helpers.create_exception import create_exception
 from src.repository import auth as repository_auth
 from src.repository import user as repository_user
 from src.schemas.auth import RequestEmail, SignInResponse
-from src.schemas.user import BaseUserSchema, UserResponse, UserSchema
+from src.schemas.user import (
+    BaseAuthUserRequestSchema,
+    SignUpRequestSchema,
+    SignUpResponseSchema,
+)
 from src.services.auth import auth_service
 from src.services.email import send_email
 
@@ -31,17 +37,24 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post(
     "/signup",
-    response_model=UserResponse,
+    response_model=SignUpResponseSchema,
     status_code=status.HTTP_201_CREATED,
     response_description=HTTPStatusMessages.successfully_created.value,
-    description="Register a new user and send an email verification link",
+    description=(
+        "Register a new user and send an email verification link.\n\n"
+        "Username requirements:\n"
+        "- length must be between 3 and 30 characters\n"
+        "- must start with a lowercase letter\n"
+        "- may contain only lowercase letters, digits, and underscores\n"
+        "- must not end with an underscore"
+    ),
 )
 async def register(
-    body: UserSchema,
+    body: SignUpRequestSchema,
     background_tasks: BackgroundTasks,
     request: Request,
     db: AsyncSession = Depends(get_db),
-) -> UserResponse:
+) -> SignUpResponseSchema:
     """Register a new user and send an email verification link.
 
     Creates a new user account with a hashed password, generates an email
@@ -89,7 +102,8 @@ async def register(
     description="Authenticate a user and start a new session",
 )
 async def login(
-    body: BaseUserSchema, db: AsyncSession = Depends(get_db)
+    body: BaseAuthUserRequestSchema,
+    db: AsyncSession = Depends(get_db),
 ):
     """Authenticate a user and start a new session.
 

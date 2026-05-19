@@ -1,3 +1,5 @@
+"""FastAPI routes for photo management and transformation workflows."""
+
 import math
 from datetime import datetime, timezone
 from typing import Annotated

@@ -1,7 +1,7 @@
 """
 Database session management for async SQLAlchemy.
 Provides a session manager and FastAPI dependency (`get_db`)
-with commit/rollback behavior per request.
+with request-scoped session lifecycle and rollback on database errors.
 """
 
 import logging

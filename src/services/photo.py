@@ -1,3 +1,5 @@
+"""Service helpers for image validation, Cloudinary, and photo transformations."""
+
 import enum
 from datetime import datetime, timezone
 from io import BytesIO
