@@ -17,6 +17,7 @@ from src.entity.user import User
 from src.helpers.create_exception import create_exception
 from src.repository import auth as repository_auth
 from src.repository import user as repository_user
+from src.services.token_blacklist import token_blacklist_service
 
 
 class AuthService:
@@ -222,6 +223,13 @@ class AuthService:
         )
 
         token = credentials.credentials
+        # Reject tokens that were explicitly revoked during logout/ban.
+        is_blacklisted = await token_blacklist_service.is_blacklisted(
+            token=token
+        )
+        if is_blacklisted:
+            raise credentials_exception
+
         try:
             # Decode JWT
             payload = self.decode_token(token)

@@ -1,6 +1,7 @@
 """FastAPI application entry point for the Photo share REST API."""
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, status
 from fastapi.exceptions import RequestValidationError
@@ -13,8 +14,18 @@ from src.config.middlewares import setup_cors
 from src.database.db import get_db
 from src.helpers.create_exception import create_exception
 from src.routes import auth, comment, photo, user
+from src.services.token_blacklist import token_blacklist_service
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application resources during startup and shutdown."""
+    yield
+    # Close Redis client gracefully when the application stops.
+    await token_blacklist_service.close()
+
+
+app = FastAPI(lifespan=lifespan)
 
 logger = logging.getLogger(__name__)
 

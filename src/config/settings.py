@@ -44,7 +44,8 @@ class Settings(BaseSettings):
     REDIS_DOMAIN: str
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
-    REDIS_PASSWORD: str | None = None
+    REDIS_PASSWORD: str
+    REDIS_URL: str
 
     # Tests set this flag before importing the app. Rate limiter setup uses it
     # to avoid creating Redis-backed buckets during local pytest runs.

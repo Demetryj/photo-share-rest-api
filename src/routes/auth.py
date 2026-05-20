@@ -10,6 +10,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.messages import EmailMessages, HTTPStatusMessages
@@ -27,6 +28,7 @@ from src.schemas.user import (
 )
 from src.services.auth import auth_service
 from src.services.email import send_email
+from src.services.token_blacklist import token_blacklist_service
 
 EMAIL_VERIFY_TITLE = "Confirm your email"
 EMAIL_VERIFY_TEMPLATE = "verify_email.html"
@@ -179,13 +181,24 @@ async def logout(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(
+        auth_service.security
+    ),
 ):
     """Log out the current session.
 
-    Reads the refresh token from the ``refresh_token`` cookie, removes the
-    matching stored token hash from the database, and clears the cookie in the
-    response. Other active sessions on other devices remain valid.
+    Reads the refresh token from the ``refresh_token`` cookie, adds the current
+    access token to Redis blacklist for the rest of its lifetime, removes the
+    matching stored refresh token hash from the database, and clears the cookie
+    in the response. Other active sessions remain valid.
     """
+    access_token = credentials.credentials
+
+    # Revoke the current access token so it cannot be reused after logout.
+    await token_blacklist_service.add_to_blacklist_access_token(
+        token=access_token
+    )
+
     refresh_token = request.cookies.get(REFRESH_TOKEN)
     if refresh_token:
         hash_refresh_token = auth_service.get_token_hash(
@@ -204,18 +217,29 @@ async def logout(
     "/logout-from-all-devices",
     status_code=status.HTTP_204_NO_CONTENT,
     response_description=HTTPStatusMessages.success_logout.value,
-    description="Log out the user from all devices",
+    description="Log out the user from all devices and revoke the current access token",
 )
 async def logout_from_all_devices(
     current_user: User = Depends(auth_service.get_current_user),
     db: AsyncSession = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(
+        auth_service.security
+    ),
 ):
     """Log out the user from all devices.
 
-    Resolves the currently authenticated user from the access token, deletes
-    all refresh tokens that belong to that user, and clears the refresh token
-    cookie for the current device.
+    Resolves the currently authenticated user from the access token, adds the
+    current access token to Redis blacklist for the rest of its lifetime,
+    deletes all refresh tokens that belong to that user, and clears the
+    refresh token cookie for the current device.
     """
+    access_token = credentials.credentials
+
+    # Revoke the current access token immediately for this device as well.
+    await token_blacklist_service.add_to_blacklist_access_token(
+        token=access_token
+    )
+
     await repository_auth.delete_all_refresh_tokens_by_user_id(
         user_id=current_user.id, db=db
     )
