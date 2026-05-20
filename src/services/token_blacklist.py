@@ -1,7 +1,7 @@
 """Redis-backed blacklist for revoked access tokens."""
 
-import hashlib
 from datetime import datetime, timezone
+from typing import Any
 
 from jose import JWTError, jwt
 from redis.asyncio import Redis
@@ -34,30 +34,50 @@ class TokenBlacklistService:
             await self._redis.aclose()
             self._redis = None
 
-    def _build_token_hash(self, token: str) -> str:
-        """Hash the token before storing it in Redis."""
-        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    def _decode_token_without_exp_verification(
+        self, token: str
+    ) -> dict[str, Any] | None:
+        """Decode a JWT while ignoring expiration validation.
 
-    def _build_key(self, token: str) -> str:
-        """Build a namespaced Redis key for a revoked access token."""
-        token_hash = self._build_token_hash(token)
-        return f"{self._prefix}:{token_hash}"
-
-    def get_token_ttl(self, token: str) -> int:
-        """Return remaining token lifetime in seconds.
-
-        If the token is invalid or already expired, return 0.
+        This is used only to read technical claims such as ``exp`` and ``jti``
+        when we need to revoke a token that may be close to expiration.
         """
         try:
-            # We decode without expiration verification because logout/ban can be
-            # called near the token boundary, and we only need the `exp` claim.
-            payload = jwt.decode(
+            return jwt.decode(
                 token,
                 settings.secret_key,
                 algorithms=[settings.hash_algorithm],
                 options={"verify_exp": False},
             )
         except JWTError:
+            return None
+
+    def _get_token_jti(self, token: str) -> str | None:
+        """Extract the token ``jti`` claim or return ``None``."""
+        payload = self._decode_token_without_exp_verification(token)
+        if payload is None:
+            return None
+
+        jti = payload.get("jti")
+        if not isinstance(jti, str) or not jti:
+            return None
+
+        return jti
+
+    def _build_key(self, token: str) -> str | None:
+        """Build a namespaced Redis key for a revoked access token."""
+        jti = self._get_token_jti(token)
+        if jti is None:
+            return None
+        return f"{self._prefix}:{jti}"
+
+    def get_token_ttl(self, token: str) -> int:
+        """Return remaining token lifetime in seconds.
+
+        If the token is invalid or already expired, return 0.
+        """
+        payload = self._decode_token_without_exp_verification(token)
+        if payload is None:
             return 0
 
         exp = payload.get("exp")
@@ -74,16 +94,22 @@ class TokenBlacklistService:
         if ttl <= 0:
             return
 
-        redis = await self.get_redis()
         key = self._build_key(token)
+        if key is None:
+            return
+
+        redis = await self.get_redis()
 
         # We only care that the key exists; the marker value itself is irrelevant.
         await redis.set(key, "1", ex=ttl)
 
     async def is_blacklisted(self, token: str) -> bool:
         """Return True when the token is already present in blacklist."""
-        redis = await self.get_redis()
         key = self._build_key(token)
+        if key is None:
+            return False
+
+        redis = await self.get_redis()
         return await redis.exists(key) == 1
 
 
