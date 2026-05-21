@@ -55,26 +55,50 @@ class User(Base, LastModifiedMixin):
         Boolean, default=False, nullable=False
     )
     blocked: Mapped[bool] = mapped_column(Boolean, default=False)
-    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
-        "RefreshToken", backref="user", cascade="all, delete-orphan"
+    user_sessions: Mapped[list["UserSession"]] = relationship(
+        "UserSession",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
 
-# Separate table for refresh tokens: one user can sign in from multiple devices,
-# so each device/session gets its own refresh token row.
-class RefreshToken(Base, LastModifiedMixin):
-    """Refresh token issued for a specific user session or device."""
+# Separate table for user sessions: one user can sign in from multiple
+# devices/browsers, so each session stores its own refresh-token hash,
+# current access-token JTI, and optional device information.
+class UserSession(Base, LastModifiedMixin):
+    """Active authenticated session for one user device or browser.
 
-    __tablename__ = "refresh_tokens"
+    A session record represents one sign-in context. It links the owning
+    user to the refresh-token hash used to continue that session, the
+    currently active access-token JTI used to validate protected requests,
+    and optional client/device metadata for identifying where the session
+    came from.
+    """
+
+    __tablename__ = "user_sessions"
 
     id: Mapped[int] = mapped_column(
         primary_key=True, autoincrement=True
     )
-    rf_token: Mapped[str] = mapped_column(
-        String(1024), nullable=False, unique=True
+    refresh_token_hash: Mapped[str] = mapped_column(
+        String(1024), nullable=False, unique=True, index=True
+    )
+    access_token_jti: Mapped[str] = mapped_column(
+        String(36), nullable=False, unique=True, index=True
+    )
+    device_info: Mapped[str | None] = mapped_column(
+        String(300), nullable=True, default=None
     )
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE")
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="user_sessions",
     )
 
 

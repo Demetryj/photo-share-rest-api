@@ -225,18 +225,27 @@ async def resolve_photo_owner_id(
     return target_user.id
 
 
-async def cloudinary_upload(file: UploadFile, public_id: str) -> str:
+async def cloudinary_upload(
+    file: UploadFile,
+    public_id: str,
+    overwrite: bool = False,
+) -> str:
     """Upload an image file to Cloudinary and return its generated URL.
 
     The function sends the uploaded file object to Cloudinary using the provided
-    public identifier. If the upload succeeds, it builds and returns the final
-    CDN URL for the stored image based on the uploaded asset version.
+    public identifier. When ``overwrite=True`` is passed, Cloudinary replaces
+    the existing asset stored under the same ``public_id`` instead of creating
+    a separate file with a new identifier. If the upload succeeds, the function
+    builds and returns the final CDN URL for the stored image based on the
+    uploaded asset version.
     """
 
     # Upload the new photo to Cloudinary under a stable user-specific public id.
     try:
         res = cloudinary.uploader.upload(
-            file.file, public_id=public_id
+            file.file,
+            public_id=public_id,
+            overwrite=overwrite,
         )
     except Exception:
         create_exception(

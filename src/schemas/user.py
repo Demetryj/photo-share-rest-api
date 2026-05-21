@@ -159,3 +159,23 @@ class UserRoleResponseSchema(BaseModel):
     email: EmailStr
     role: AssignableRole
     updated_at: datetime
+
+
+class UserBlockRequestSchema(BaseModel):
+    """Request schema for changing a user's blocked status."""
+
+    blocked: bool
+
+
+class UserBlockResponseSchema(BaseModel):
+    """Response schema after changing a user's blocked status."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    display_name: str | None = None
+    email: EmailStr
+    role: Role
+    blocked: bool
+    updated_at: datetime

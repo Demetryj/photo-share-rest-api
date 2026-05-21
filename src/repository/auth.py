@@ -1,75 +1,135 @@
-"""Repository helpers for persisted refresh-token session records."""
+"""Repository helpers for persisted user-session records.
+
+This module contains database operations for managing authenticated user
+sessions. Each session row represents one device or browser context and
+stores the refresh-token hash together with the currently active
+access-token JTI for that session.
+"""
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.entity.user import RefreshToken
+from src.entity.user import UserSession
 
 
-# Create and persist a refresh token hash for a user session.
-async def add_refresh_token(
-    hash_token: str, user_id: int, db: AsyncSession
-) -> RefreshToken:
-    """Store a refresh token hash for a user session."""
+# Create and persist one user session for a device or browser.
+async def create_user_session(
+    refresh_token_hash: str,
+    access_token_jti: str,
+    user_id: int,
+    db: AsyncSession,
+) -> UserSession:
+    """Create and persist a new user session record.
 
-    record = RefreshToken(rf_token=hash_token, user_id=user_id)
+    The record stores the refresh-token hash and the currently active
+    access-token JTI for one authenticated user session.
+    """
+
+    record = UserSession(
+        refresh_token_hash=refresh_token_hash,
+        access_token_jti=access_token_jti,
+        user_id=user_id,
+    )
     db.add(record)
     await db.commit()
     await db.refresh(record)
     return record
 
 
-# Fetch one stored refresh token row by its hashed token value.
-async def get_refresh_token_by_token(
-    hash_token: str, db: AsyncSession
-) -> RefreshToken | None:
-    """Return a stored refresh token by its hash."""
+# Fetch one stored session by its refresh-token hash.
+async def get_user_session_by_refresh_token_hash(
+    refresh_token_hash: str,
+    db: AsyncSession,
+) -> UserSession | None:
+    """Return one user session by its stored refresh-token hash."""
 
-    stmt = select(RefreshToken).where(
-        RefreshToken.rf_token == hash_token
+    stmt = select(UserSession).where(
+        UserSession.refresh_token_hash == refresh_token_hash
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
 
 
-# Rotate an existing stored refresh token hash for the current session.
-async def update_refresh_token(
-    old_hash_token: str, new_hash_token: str, db: AsyncSession
-) -> RefreshToken | None:
-    """Replace one stored refresh token hash with a newly generated hash."""
+# Fetch one stored session by its current access-token JTI.
+async def get_user_session_by_access_token_jti(
+    access_token_jti: str,
+    db: AsyncSession,
+) -> UserSession | None:
+    """Return one user session by its stored access-token JTI."""
 
-    db_hash_token = await get_refresh_token_by_token(
-        hash_token=old_hash_token, db=db
+    stmt = select(UserSession).where(
+        UserSession.access_token_jti == access_token_jti
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+# Rotate both token identifiers for an existing session.
+async def update_user_session_tokens(
+    old_refresh_token_hash: str,
+    new_refresh_token_hash: str,
+    new_access_token_jti: str,
+    db: AsyncSession,
+) -> UserSession | None:
+    """Update the token identifiers for an existing user session.
+
+    The function finds the session by its current refresh-token hash, returns
+    ``None`` when that session does not exist, and otherwise replaces both
+    the stored refresh-token hash and the stored access-token JTI.
+    """
+
+    session = await get_user_session_by_refresh_token_hash(
+        refresh_token_hash=old_refresh_token_hash,
+        db=db,
     )
 
-    if db_hash_token:
-        db_hash_token.rf_token = new_hash_token
-        await db.commit()
-        await db.refresh(db_hash_token)
+    if session is None:
+        return None
 
-    return db_hash_token
+    session.refresh_token_hash = new_refresh_token_hash
+    session.access_token_jti = new_access_token_jti
+    await db.commit()
+    await db.refresh(session)
+    return session
 
 
-# Delete one stored refresh token hash.
-async def delete_refresh_token_by_token(
-    hash_token: str, db: AsyncSession
+# Delete one stored session by its refresh-token hash.
+async def delete_user_session_by_refresh_token_hash(
+    refresh_token_hash: str,
+    db: AsyncSession,
 ) -> bool:
-    """Delete one refresh token by its stored hash."""
+    """Delete one user session by its stored refresh-token hash."""
 
-    stmt = delete(RefreshToken).where(
-        RefreshToken.rf_token == hash_token
+    stmt = delete(UserSession).where(
+        UserSession.refresh_token_hash == refresh_token_hash
     )
     result = await db.execute(stmt)
     await db.commit()
     return (result.rowcount or 0) > 0
 
 
-# Delete all stored refresh token hashes for a user.
-async def delete_all_refresh_tokens_by_user_id(
-    user_id: int, db: AsyncSession
-) -> None:
-    """Delete all refresh tokens that belong to a user."""
+# Delete one stored session by its current access-token JTI.
+async def delete_user_session_by_access_token_jti(
+    access_token_jti: str,
+    db: AsyncSession,
+) -> bool:
+    """Delete one user session by its stored access-token JTI."""
 
-    stmt = delete(RefreshToken).where(RefreshToken.user_id == user_id)
+    stmt = delete(UserSession).where(
+        UserSession.access_token_jti == access_token_jti
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    return (result.rowcount or 0) > 0
+
+
+# Delete all stored sessions that belong to a user.
+async def delete_all_user_sessions_by_user_id(
+    user_id: int,
+    db: AsyncSession,
+) -> None:
+    """Delete all user sessions that belong to the specified user."""
+
+    stmt = delete(UserSession).where(UserSession.user_id == user_id)
     await db.execute(stmt)
     await db.commit()

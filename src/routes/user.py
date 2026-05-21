@@ -1,9 +1,7 @@
 """FastAPI routes for public user profiles and self-profile management."""
 
 import math
-from datetime import datetime, timezone
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import (
     APIRouter,
@@ -19,14 +17,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config.messages import HTTPStatusMessages
 from src.config.settings import settings
 from src.database.db import get_db
-from src.entity.user import Role, User
+from src.entity.user import User
 from src.helpers.create_exception import create_exception
+from src.repository import auth as repository_auth
 from src.repository import user as repository_user
 from src.schemas.user import (
     MyProfileResponseSchema,
     MyUserInfoResponseSchema,
     PaginatedUsersResponseSchema,
     PublicProfileResponseSchema,
+    UserBlockRequestSchema,
+    UserBlockResponseSchema,
     UserRoleRequestSchema,
     UserRoleResponseSchema,
 )
@@ -52,6 +53,7 @@ ProfileDisplayNameForm = Annotated[
 @router.get(
     "/me",
     response_model=MyUserInfoResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Return detailed information about the authenticated user.\n\n"
         "Available for authenticated users."
@@ -89,6 +91,7 @@ async def get_current_user_info(
 @router.get(
     "/all",
     response_model=PaginatedUsersResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Return a paginated list of public user profiles.\n\n"
         "Available for authenticated users."
@@ -147,6 +150,7 @@ async def get_all_users(
 @router.get(
     "/profile/{username}",
     response_model=PublicProfileResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Return a user's public profile by unique username.\n\n"
         "Available for authenticated users."
@@ -196,6 +200,7 @@ async def get_profile_by_username(
 @router.get(
     "/profile",
     response_model=MyProfileResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Return the authenticated user's editable profile data.\n\n"
         "Available for authenticated users."
@@ -229,6 +234,7 @@ async def get_own_profile(
 @router.patch(
     "/profile",
     response_model=MyProfileResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Update the authenticated user's editable profile data.\n\n"
         "Available for authenticated users.\n\n"
@@ -265,12 +271,16 @@ async def update_own_user_profile(
     avatar_url = None
     if file is not None:
         await photo_service.validate_image_file(file=file)
-        timestamp = datetime.now(timezone.utc).strftime(
-            "%Y%m%d%H%M%S"
+        # Keep one stable avatar asset per user so a new upload replaces the
+        # previous avatar in Cloudinary instead of creating a new file.
+        public_id = (
+            f"{settings.CLOUDINARY_PUBLIC_ID_PREFIX}/avatars/"
+            f"{current_user.id}"
         )
-        public_id = f"{settings.CLOUDINARY_PUBLIC_ID_PREFIX}/avatars/{current_user.id}/{timestamp}_{uuid4().hex}"
         avatar_url = await photo_service.cloudinary_upload(
-            file=file, public_id=public_id
+            file=file,
+            public_id=public_id,
+            overwrite=True,
         )
 
     updated_user = await repository_user.update_own_user_profile(
@@ -293,6 +303,7 @@ async def update_own_user_profile(
 @router.patch(
     "/role/{user_id}",
     response_model=UserRoleResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Change a user's role by user ID.\n\n"
         "Available for administrators.\n\n"
@@ -308,17 +319,30 @@ async def change_user_role(
 ) -> UserRoleResponseSchema:
     """Change a target user's role and return the updated user data.
 
-    The endpoint is restricted to administrators. It rejects attempts to
-    assign the `admin` role, updates the target user's role by user ID,
-    returns 404 when the target user does not exist, and responds with the
-    updated role payload.
+    The endpoint is restricted to administrators. It first loads the target
+    user, returns 404 when that user does not exist, rejects self-role
+    changes, rejects role-management actions against another admin, rejects
+    attempts to assign the `admin` role, and then updates the target user's
+    role by user ID.
     """
 
-    if body.role == Role.admin or current_user.id == user_id:
+    target_user = await repository_user.get_user_by_id(
+        user_id=user_id, db=db
+    )
+
+    # The role can be changed only for an existing target user.
+    if target_user is None:
         create_exception(
-            status_code=status.HTTP_403_FORBIDDEN,
-            message=HTTPStatusMessages.forbidden.value,
+            status_code=status.HTTP_404_NOT_FOUND,
+            message=HTTPStatusMessages.not_found.value,
         )
+
+    # Reuse the shared admin-user-management rule set for role changes.
+    user_service.validate_admin_user_management_action(
+        target_user=target_user,
+        current_user=current_user,
+        new_role=body.role,
+    )
 
     updated_user = await repository_user.change_user_role(
         user_id=user_id, new_role=body.role, db=db
@@ -331,3 +355,72 @@ async def change_user_role(
         )
 
     return UserRoleResponseSchema.model_validate(updated_user)
+
+
+# Change another user's blocked status as an administrator.
+@router.patch(
+    "/{user_id}/blocked",
+    response_model=UserBlockResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
+    description=(
+        "Change a user's blocked status by user ID.\n\n"
+        "Available for administrators.\n\n"
+        "Blocked users cannot start new sessions or access protected routes."
+    ),
+    dependencies=[Depends(admin_only)],
+)
+async def change_user_blocked_status(
+    user_id: int,
+    body: UserBlockRequestSchema,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(auth_service.get_current_user),
+) -> UserBlockResponseSchema:
+    """Change a target user's blocked status and return the updated user.
+
+    The endpoint is restricted to administrators. It loads the target user,
+    returns 404 when that user does not exist, rejects forbidden management
+    actions such as targeting self or another admin, rejects requests that do
+    not actually change the blocked status, updates the target user's blocked
+    flag, and when the user is blocked removes all stored user-session
+    records for that user so existing authenticated sessions are revoked.
+    """
+
+    # The blocked status can be changed only for an existing target user.
+    target_user = await repository_user.get_user_by_id(
+        user_id=user_id, db=db
+    )
+
+    if target_user is None:
+        create_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            message=HTTPStatusMessages.not_found.value,
+        )
+
+    # Reuse the shared admin-user-management rule set for block/unblock actions.
+    user_service.validate_admin_user_management_action(
+        target_user=target_user,
+        current_user=current_user,
+    )
+
+    # Reject no-op requests when the user already has the requested status.
+    if body.blocked == target_user.blocked:
+        create_exception()
+
+    updated_user = await repository_user.change_user_blocked_status(
+        user_id=target_user.id, blocked_status=body.blocked, db=db
+    )
+
+    if updated_user is None:
+        create_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            message=HTTPStatusMessages.not_found.value,
+        )
+
+    # Blocking a user must invalidate every persisted authenticated session.
+    if updated_user.blocked:
+        await repository_auth.delete_all_user_sessions_by_user_id(
+            user_id=updated_user.id,
+            db=db,
+        )
+
+    return UserBlockResponseSchema.model_validate(updated_user)

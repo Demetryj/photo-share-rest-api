@@ -137,6 +137,7 @@ async def upload_photo(
 @router.get(
     "/{photo_id}",
     response_model=PhotoResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Return one photo by ID.\n\n" f"{OWNER_OR_ADMIN_ACCESS}"
     ),
@@ -170,6 +171,7 @@ async def get_photo_by_photo_id(
 @router.get(
     "/user/{user_id}",
     response_model=PaginatedPhotoResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Return a paginated list of photos for the specified user.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"
@@ -272,6 +274,7 @@ async def remove_photo(
 @router.put(
     "/{photo_id}/description",
     response_model=PhotoResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Update the description of a photo.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"
@@ -356,6 +359,7 @@ async def add_photo_tags(
 
 @router.post(
     "/{photo_id}/transform-preview",
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Generate a temporary preview of a transformed photo without saving it.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}\n\n"
@@ -404,6 +408,7 @@ async def preview_photo_transformation(
 @router.post(
     "/{photo_id}/transformations",
     response_model=PhotoTransformationResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     status_code=status.HTTP_201_CREATED,
     description=(
         "Create and save a transformed photo link with a QR code.\n\n"
@@ -473,6 +478,7 @@ async def create_photo_transformation(
 @router.get(
     "/{photo_id}/transformations",
     response_model=list[PhotoTransformationResponseSchema],
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Return all saved transformations for a photo.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"

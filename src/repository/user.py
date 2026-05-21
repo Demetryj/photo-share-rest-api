@@ -136,3 +136,29 @@ async def change_user_role(
     await db.refresh(user)
 
     return user
+
+
+async def change_user_blocked_status(
+    user_id: int, blocked_status: bool, db: AsyncSession
+) -> User | None:
+    """Change a user's blocked status and return the updated user.
+
+    The function loads the target user by id, returns ``None`` when the user
+    does not exist, skips a database update when the requested blocked status
+    is already set, and otherwise persists the new blocked status and returns
+    the refreshed user entity.
+    """
+
+    user = await get_user_by_id(user_id=user_id, db=db)
+
+    if user is None:
+        return None
+
+    if user.blocked == blocked_status:
+        return user
+
+    user.blocked = blocked_status
+    await db.commit()
+    await db.refresh(user)
+
+    return user

@@ -96,11 +96,10 @@ async def register(
     return new_user
 
 
-# TODO Додати редіс для аксес токнів, блок-ліста
 @router.post(
     "/signin",
     response_model=SignInResponse,
-    response_description=HTTPStatusMessages.success,
+    response_description=HTTPStatusMessages.success.value,
     description="Authenticate a user and start a new session",
 )
 async def login(
@@ -109,12 +108,14 @@ async def login(
 ):
     """Authenticate a user and start a new session.
 
-    Validates user credentials, returns an access token in the response body,
-    and stores the refresh token in an ``HttpOnly`` cookie. A hash of the
-    refresh token is persisted in the database so each login creates its own
-    revocable session.
+    The endpoint resolves the user by email, validates confirmation status,
+    blocked status, and password, issues a new access token and refresh
+    token, stores the refresh-token hash for session revocation, stores the
+    access-token JTI for active-token validation, and returns the access
+    token while placing the refresh token into an ``HttpOnly`` cookie.
     """
 
+    # Resolve the account by email before any credential checks.
     user = await repository_user.get_user_by_email(
         email=body.email, db=db
     )
@@ -130,6 +131,14 @@ async def login(
             message=HTTPStatusMessages.email_not_confirmed.value,
         )
 
+    # Blocked users must not be able to start new authenticated sessions.
+    if user.blocked:
+        create_exception(
+            status_code=status.HTTP_403_FORBIDDEN,
+            message=HTTPStatusMessages.forbidden.value,
+        )
+
+    # Verify the submitted password against the stored bcrypt hash.
     is_match_passwords = auth_service.verify_password(
         plain_password=body.password, hashed_password=user.password
     )
@@ -139,24 +148,29 @@ async def login(
             message=HTTPStatusMessages.invalid_email_or_password.value,
         )
 
-    # Generate JWT
-    access_token = auth_service.create_access_token(
+    # Generate JWTs and keep the access-token JTI for active-session tracking.
+    access_token, access_token_jti = auth_service.create_access_token(
         payload={"sub": user.email}
     )
     refresh_token = auth_service.create_refresh_token(
         payload={"sub": user.email}
     )
-    hash_refresh_token = auth_service.get_token_hash(
+    refresh_token_hash = auth_service.get_token_hash(
         token=refresh_token
     )
 
-    await repository_auth.add_refresh_token(
-        hash_token=hash_refresh_token, user_id=user.id, db=db
+    # Persist one session record for this browser/device context.
+    await repository_auth.create_user_session(
+        refresh_token_hash=refresh_token_hash,
+        access_token_jti=access_token_jti,
+        user_id=user.id,
+        db=db,
     )
 
     response = JSONResponse(
         {"access_token": access_token, "token_type": "bearer"}
     )
+    # Store the refresh token in a secure HttpOnly cookie for browser flows.
     response.set_cookie(
         key=REFRESH_TOKEN,
         value=refresh_token,
@@ -180,32 +194,35 @@ async def login(
 async def logout(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(auth_service.get_current_user),
+    _: User = Depends(auth_service.get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(
         auth_service.security
     ),
 ):
     """Log out the current session.
 
-    Reads the refresh token from the ``refresh_token`` cookie, adds the current
-    access token to Redis blacklist for the rest of its lifetime, removes the
-    matching stored refresh token hash from the database, and clears the cookie
-    in the response. Other active sessions remain valid.
+    The endpoint validates the current authenticated session, reads the
+    current access token from the bearer credentials, adds that access token
+    to the Redis blacklist for the rest of its lifetime, removes the
+    matching stored user-session record by refresh-token hash, and clears the
+    refresh-token cookie. Other active sessions remain valid.
     """
     access_token = credentials.credentials
 
     # Revoke the current access token so it cannot be reused after logout.
-    await token_blacklist_service.add_to_blacklist_access_token(
+    await token_blacklist_service.add_access_token_jti_to_blacklist(
         token=access_token
     )
 
     refresh_token = request.cookies.get(REFRESH_TOKEN)
     if refresh_token:
-        hash_refresh_token = auth_service.get_token_hash(
-            token=refresh_token
+        # Delete the current session record identified by the refresh token.
+        refresh_token_hash = auth_service.get_token_hash(
+            refresh_token
         )
-        await repository_auth.delete_refresh_token_by_token(
-            hash_token=hash_refresh_token, db=db
+        await repository_auth.delete_user_session_by_refresh_token_hash(
+            refresh_token_hash=refresh_token_hash,
+            db=db,
         )
 
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -228,20 +245,22 @@ async def logout_from_all_devices(
 ):
     """Log out the user from all devices.
 
-    Resolves the currently authenticated user from the access token, adds the
-    current access token to Redis blacklist for the rest of its lifetime,
-    deletes all refresh tokens that belong to that user, and clears the
-    refresh token cookie for the current device.
+    The endpoint validates the current authenticated session, adds the
+    current access token to the Redis blacklist for the rest of its
+    lifetime, deletes all stored user-session records for the user, and
+    clears the refresh-token cookie for the current device.
     """
     access_token = credentials.credentials
 
     # Revoke the current access token immediately for this device as well.
-    await token_blacklist_service.add_to_blacklist_access_token(
+    await token_blacklist_service.add_access_token_jti_to_blacklist(
         token=access_token
     )
 
-    await repository_auth.delete_all_refresh_tokens_by_user_id(
-        user_id=current_user.id, db=db
+    # Delete every stored session for this user across all devices.
+    await repository_auth.delete_all_user_sessions_by_user_id(
+        user_id=current_user.id,
+        db=db,
     )
 
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -339,15 +358,19 @@ async def request_confirm_email(
     ),
 )
 async def refresh_token(
-    request: Request, db: AsyncSession = Depends(get_db)
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
     """Issue a new access token and rotate the refresh token.
 
-    Reads the refresh token from the ``refresh_token`` cookie, validates it,
-    ensures the current session is still active in the database, and rotates
-    the refresh token by replacing its stored hash and cookie value. Browser
-    clients must send this request with ``credentials: "include"`` so the
-    cookie is included.
+    The endpoint reads the refresh token from the ``refresh_token`` cookie,
+    validates the token and its owner, rejects blocked users, verifies that
+    the current refresh-token session still exists in the database, issues a
+    new access token and a rotated refresh token, updates the stored
+    refresh-token hash for that session, stores the new access-token JTI for
+    active-token validation, and returns the new access token while updating
+    the refresh-token cookie. Browser clients must send this request with
+    ``credentials: "include"`` so the cookie is included.
     """
 
     credentials_exception = HTTPException(
@@ -367,16 +390,29 @@ async def refresh_token(
     if user is None:
         raise credentials_exception
 
+    # Blocked users must not be able to refresh authentication tokens.
+    if user.blocked:
+        create_exception(
+            status_code=status.HTTP_403_FORBIDDEN,
+            message=HTTPStatusMessages.forbidden.value,
+        )
+
     old_refresh_token_hash = auth_service.get_token_hash(
         token=refresh_token
     )
-    if old_refresh_token_hash is None:
-        await repository_auth.delete_refresh_token_by_token(
-            hash_token=old_refresh_token_hash, db=db
+
+    # Ensure that this exact user session still exists before rotation.
+    session = (
+        await repository_auth.get_user_session_by_refresh_token_hash(
+            refresh_token_hash=old_refresh_token_hash,
+            db=db,
         )
+    )
+    if session is None:
         raise credentials_exception
 
-    access_token = auth_service.create_access_token(
+    # Issue a fresh access token and rotate the refresh token for this session.
+    access_token, access_token_jti = auth_service.create_access_token(
         payload={"sub": email}
     )
     new_refresh_token = auth_service.create_refresh_token(
@@ -386,18 +422,23 @@ async def refresh_token(
         token=new_refresh_token
     )
 
-    updated = await repository_auth.update_refresh_token(
-        old_hash_token=old_refresh_token_hash,
-        new_hash_token=new_refresh_token_hash,
-        db=db,
+    # Rotate both token identifiers inside the same persisted session record.
+    updated_session = (
+        await repository_auth.update_user_session_tokens(
+            old_refresh_token_hash=old_refresh_token_hash,
+            new_refresh_token_hash=new_refresh_token_hash,
+            new_access_token_jti=access_token_jti,
+            db=db,
+        )
     )
 
-    if updated is None:
+    if updated_session is None:
         raise credentials_exception
 
     response = JSONResponse(
         {"access_token": access_token, "token_type": "bearer"}
     )
+    # Replace the browser refresh-token cookie with the rotated token value.
     response.set_cookie(
         key=REFRESH_TOKEN,
         value=new_refresh_token,

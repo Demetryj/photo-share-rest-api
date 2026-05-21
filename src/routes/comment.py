@@ -68,6 +68,7 @@ async def create_comment_to_photo(
 @router.get(
     "/{photo_id}/comments",
     response_model=PaginatedCommentResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Return a paginated list of comments for the specified photo.\n\n"
         f"{AUTHENTICATED_USERS_ACCESS}"
@@ -78,6 +79,7 @@ async def get_all_comments_by_photo_id(
     photo_id: int,
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=10, ge=1, le=50),
+    _: User = Depends(auth_service.get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Return a paginated list of comments for the specified photo."""
@@ -116,6 +118,7 @@ async def get_all_comments_by_photo_id(
 @router.patch(
     "/{photo_id}/comments/{comment_id}",
     response_model=CommentResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Update a comment for the specified photo.\n\n"
         f"{AUTHENTICATED_USERS_ACCESS}"
@@ -156,6 +159,7 @@ async def update_photo_comment(
 @router.delete(
     "/{photo_id}/comments/{comment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Delete a comment from the specified photo.\n\n"
         f"{STAFF_ACCESS}"
@@ -163,7 +167,10 @@ async def update_photo_comment(
     dependencies=[Depends(staff_only)],
 )
 async def delete_photo_comment(
-    photo_id: int, comment_id: int, db: AsyncSession = Depends(get_db)
+    photo_id: int,
+    comment_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(auth_service.get_current_user),
 ) -> None:
     """Delete a comment from the specified photo."""
 
