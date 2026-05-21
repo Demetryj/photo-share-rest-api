@@ -40,3 +40,4 @@ admin_only = RoleAccess([Role.admin])
 authenticated_users = RoleAccess(
     [Role.admin, Role.moderator, Role.user]
 )
+admin_and_user_access = RoleAccess([Role.admin, Role.user])

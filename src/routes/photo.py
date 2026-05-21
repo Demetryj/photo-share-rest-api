@@ -19,12 +19,13 @@ from pydantic import Field, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.messages import (
+    AUTHENTICATED_USERS_ACCESS,
     OWNER_OR_ADMIN_ACCESS,
     HTTPStatusMessages,
 )
 from src.config.settings import settings
 from src.database.db import get_db
-from src.entity.user import Role, User
+from src.entity.user import User
 from src.helpers.create_exception import create_exception
 from src.repository import comment as repository_comment
 from src.repository import photo as repository_photo
@@ -38,6 +39,7 @@ from src.schemas.photo import (
     UpdatePhotoDescriptionSchema,
 )
 from src.services import photo as photo_service
+from src.services import role as role_service
 from src.services.auth import auth_service
 
 router = APIRouter(prefix="/photos", tags=["photos"])
@@ -75,6 +77,7 @@ TargetUserId = Annotated[
         "Upload a photo along with a description (optional) and tags (optional).\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def upload_photo(
     file: UploadFile = File(
@@ -139,27 +142,32 @@ async def upload_photo(
     response_model=PhotoResponseSchema,
     response_description=HTTPStatusMessages.success.value,
     description=(
-        "Return one photo by ID.\n\n" f"{OWNER_OR_ADMIN_ACCESS}"
+        "Return one photo by ID.\n\n" f"{AUTHENTICATED_USERS_ACCESS}"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def get_photo_by_photo_id(
     photo_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(auth_service.get_current_user),
+    _: User = Depends(auth_service.get_current_user),
 ) -> PhotoResponseSchema:
     """Return one photo by its identifier for the owner or an admin.
 
     The endpoint fetches the requested photo by its identifier, checks that
-    it exists, verifies that the current user is either the photo owner or
-    an administrator, and returns the serialized photo data.
+    it exists, and returns the serialized photo data.
     """
 
-    photo = await photo_service.get_photo_for_owner_or_admin(
-        photo_id=photo_id, current_user=current_user, db=db
+    photo = await repository_photo.get_photo_by_id(
+        photo_id=photo_id, db=db
     )
+    if photo is None:
+        create_exception(
+            status_code=status.HTTP_404_NOT_FOUND,
+            message=HTTPStatusMessages.not_found.value,
+        )
 
     comments_count = await repository_comment.get_total_number_of_comments_on_photo(
-        photo_id=photo_id, db=db
+        photo_id=photo.id, db=db
     )
 
     return photo_service.build_photo_response(
@@ -174,20 +182,20 @@ async def get_photo_by_photo_id(
     response_description=HTTPStatusMessages.success.value,
     description=(
         "Return a paginated list of photos for the specified user.\n\n"
-        f"{OWNER_OR_ADMIN_ACCESS}"
+        f"{AUTHENTICATED_USERS_ACCESS}"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def get_all_photo_by_user_id(
     user_id: int,
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=10, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(auth_service.get_current_user),
+    _: User = Depends(auth_service.get_current_user),
 ) -> PaginatedPhotoResponseSchema:
     """Return a paginated list of the specified user's photos.
 
-    The endpoint checks that the target user exists, verifies that the
-    current user is either that user or an administrator, applies
+    The endpoint checks that the target user exists, applies
     page/per_page pagination, fetches the matching photos, calculates
     pagination metadata, and returns the current page of serialized photos.
     """
@@ -202,12 +210,6 @@ async def get_all_photo_by_user_id(
         create_exception(
             status_code=status.HTTP_404_NOT_FOUND,
             message=HTTPStatusMessages.not_found.value,
-        )
-
-    if user_id != current_user.id and current_user.role != Role.admin:
-        create_exception(
-            status_code=status.HTTP_403_FORBIDDEN,
-            message=HTTPStatusMessages.access_denied.value,
         )
 
     photo_list = await repository_photo.get_photos_by_user_id(
@@ -248,6 +250,7 @@ async def get_all_photo_by_user_id(
     description=(
         "Delete a photo by ID.\n\n" f"{OWNER_OR_ADMIN_ACCESS}"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def remove_photo(
     photo_id: int,
@@ -279,6 +282,7 @@ async def remove_photo(
         "Update the description of a photo.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def update_photo_description(
     photo_id: int,
@@ -318,6 +322,7 @@ async def update_photo_description(
         "Replace the tags of a photo with up to 5 tags.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def add_photo_tags(
     photo_id: int,
@@ -374,6 +379,7 @@ async def add_photo_tags(
         "(`gaussian` or `box`), where `blur_radius` controls blur intensity\n"
         "- `grayscale` does not require additional parameters"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def preview_photo_transformation(
     photo_id: int,
@@ -424,6 +430,7 @@ async def preview_photo_transformation(
         "(`gaussian` or `box`), where `blur_radius` controls blur intensity\n"
         "- `grayscale` does not require additional parameters"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def create_photo_transformation(
     photo_id: int,
@@ -483,6 +490,7 @@ async def create_photo_transformation(
         "Return all saved transformations for a photo.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def get_all_photo_transformations(
     photo_id: int,
@@ -520,6 +528,7 @@ async def get_all_photo_transformations(
         "Return one saved transformation by ID.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"
     ),
+    dependencies=[Depends(role_service.authenticated_users)],
 )
 async def get_photo_transformation_by_id(
     transformation_id: int,

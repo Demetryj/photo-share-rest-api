@@ -17,7 +17,9 @@ class BaseTagSchema(BaseModel):
 class AddTagsSchema(BaseModel):
     """Request schema for adding multiple tags to a photo."""
 
-    tags: list[Annotated[str, StringConstraints(max_length=50)]]
+    tags: list[Annotated[str, StringConstraints(max_length=50)]] = (
+        Field(min_length=1)
+    )
 
 
 class TagResponseShema(BaseTagSchema):

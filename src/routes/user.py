@@ -14,7 +14,11 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config.messages import HTTPStatusMessages
+from src.config.messages import (
+    ADMIN_ACCESS,
+    AUTHENTICATED_USERS_ACCESS,
+    HTTPStatusMessages,
+)
 from src.config.settings import settings
 from src.database.db import get_db
 from src.entity.user import User
@@ -56,7 +60,7 @@ ProfileDisplayNameForm = Annotated[
     response_description=HTTPStatusMessages.success.value,
     description=(
         "Return detailed information about the authenticated user.\n\n"
-        "Available for authenticated users."
+        f"{AUTHENTICATED_USERS_ACCESS}"
     ),
     dependencies=[Depends(authenticated_users)],
 )
@@ -94,7 +98,7 @@ async def get_current_user_info(
     response_description=HTTPStatusMessages.success.value,
     description=(
         "Return a paginated list of public user profiles.\n\n"
-        "Available for authenticated users."
+        f"{AUTHENTICATED_USERS_ACCESS}"
     ),
     dependencies=[Depends(authenticated_users)],
 )
@@ -153,7 +157,7 @@ async def get_all_users(
     response_description=HTTPStatusMessages.success.value,
     description=(
         "Return a user's public profile by unique username.\n\n"
-        "Available for authenticated users."
+        f"{AUTHENTICATED_USERS_ACCESS}"
     ),
     dependencies=[Depends(authenticated_users)],
 )
@@ -203,7 +207,7 @@ async def get_profile_by_username(
     response_description=HTTPStatusMessages.success.value,
     description=(
         "Return the authenticated user's editable profile data.\n\n"
-        "Available for authenticated users."
+        f"{AUTHENTICATED_USERS_ACCESS}"
     ),
     dependencies=[Depends(authenticated_users)],
 )
@@ -237,7 +241,7 @@ async def get_own_profile(
     response_description=HTTPStatusMessages.success.value,
     description=(
         "Update the authenticated user's editable profile data.\n\n"
-        "Available for authenticated users.\n\n"
+        f"{AUTHENTICATED_USERS_ACCESS}.\n\n"
         "You may update display name and avatar. "
         "At least one field must be provided."
     ),
@@ -306,7 +310,7 @@ async def update_own_user_profile(
     response_description=HTTPStatusMessages.success.value,
     description=(
         "Change a user's role by user ID.\n\n"
-        "Available for administrators.\n\n"
+        f"{ADMIN_ACCESS}\n\n"
         "At the moment this endpoint allows assigning only `user` or `moderator` roles."
     ),
     dependencies=[Depends(admin_only)],
@@ -364,7 +368,7 @@ async def change_user_role(
     response_description=HTTPStatusMessages.success.value,
     description=(
         "Change a user's blocked status by user ID.\n\n"
-        "Available for administrators.\n\n"
+        f"{ADMIN_ACCESS}\n\n"
         "Blocked users cannot start new sessions or access protected routes."
     ),
     dependencies=[Depends(admin_only)],

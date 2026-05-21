@@ -62,6 +62,7 @@ class UserValidationMessages(Enum):
 
 OWNER_OR_ADMIN_ACCESS = "Accessible by the photo owner or an admin."
 AUTHENTICATED_USERS_ACCESS = "Available for authenticated users."
+ADMIN_ACCESS = "Available for administrators."
 STAFF_ACCESS = "Available for administrators and moderators."
 
 
