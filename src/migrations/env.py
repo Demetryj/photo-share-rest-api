@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from src.config.settings import settings as app_config
 
 # import all entities (models)
-from src.entity import comment, photo, user  # noqa: F401
 from src.entity.models import Base
 
 # this is the Alembic Config object, which provides

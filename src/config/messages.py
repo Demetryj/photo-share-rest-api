@@ -22,6 +22,7 @@ class HTTPStatusMessages(Enum):
     access_denied = "Access denied"
     operation_forbidden = "Operation forbidden"
     bad_request = "Bad request"
+    rating_already_exists = "Rating already exists"
 
     failed_apload_photo_to_Cloudinary = (
         "Failed to upload photo to Cloudinary."

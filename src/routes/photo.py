@@ -170,8 +170,17 @@ async def get_photo_by_photo_id(
         photo_id=photo.id, db=db
     )
 
+    # Calculate the average rating with a dedicated aggregate query instead
+    # of loading all rating rows into the ORM object.
+    average_rating = await repository_photo.get_photo_average_rating(
+        photo_id=photo.id,
+        db=db,
+    )
+
     return photo_service.build_photo_response(
-        photo=photo, comments_count=comments_count
+        photo=photo,
+        comments_count=comments_count,
+        average_rating=average_rating,
     )
 
 
@@ -221,8 +230,19 @@ async def get_all_photo_by_user_id(
         comments_count = await repository_comment.get_total_number_of_comments_on_photo(
             photo_id=photo.id, db=db
         )
+
+        # Build each list item with an aggregated SQL average to avoid lazy
+        # relationship access and per-item Python-side rating calculation.
+        average_rating = (
+            await repository_photo.get_photo_average_rating(
+                photo_id=photo.id,
+                db=db,
+            )
+        )
         item = photo_service.build_photo_response(
-            photo=photo, comments_count=comments_count
+            photo=photo,
+            comments_count=comments_count,
+            average_rating=average_rating,
         )
         resp_photos.append(item)
 
@@ -310,14 +330,24 @@ async def update_photo_description(
         photo_id=photo_id, db=db
     )
 
+    # Recalculate the average rating before returning the updated photo.
+    average_rating = await repository_photo.get_photo_average_rating(
+        photo_id=photo.id,
+        db=db,
+    )
+
     return photo_service.build_photo_response(
-        photo=updated_photo, comments_count=comments_count
+        photo=updated_photo,
+        comments_count=comments_count,
+        average_rating=average_rating,
     )
 
 
+# Replace the tag set of an existing photo.
 @router.patch(
     "/{photo_id}/tags",
     response_model=PhotoResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Replace the tags of a photo with up to 5 tags.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"
@@ -355,11 +385,21 @@ async def add_photo_tags(
         photo_id=photo_id, db=db
     )
 
+    # Recalculate the average rating before returning the updated photo.
+    average_rating = await repository_photo.get_photo_average_rating(
+        photo_id=photo.id,
+        db=db,
+    )
+
     return photo_service.build_photo_response(
         photo=updated_photo,
         tags=tags_for_resp,
         comments_count=comments_count,
+        average_rating=average_rating,
     )
+
+
+# Generate a non-persistent preview for a requested photo transformation.
 
 
 @router.post(
@@ -409,6 +449,9 @@ async def preview_photo_transformation(
         transformation_type=body.transformation_type,
         params=params,
     )
+
+
+# Create and persist a transformed photo link together with its QR code.
 
 
 @router.post(
@@ -482,6 +525,9 @@ async def create_photo_transformation(
     return transformation
 
 
+# List all saved transformation records for one photo.
+
+
 @router.get(
     "/{photo_id}/transformations",
     response_model=list[PhotoTransformationResponseSchema],
@@ -521,9 +567,13 @@ async def get_all_photo_transformations(
     return transformations
 
 
+# Return one saved transformation record by its identifier.
+
+
 @router.get(
     "/transformations/{transformation_id}",
     response_model=PhotoTransformationResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
     description=(
         "Return one saved transformation by ID.\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"

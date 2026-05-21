@@ -331,9 +331,10 @@ async def get_photo_for_owner_or_admin(
 def build_photo_response(
     photo: Photo,
     comments_count: int | None = None,
+    average_rating: float | None = None,
     tags: list[Tag] | None = None,
 ) -> PhotoResponseSchema:
-    """Build a photo response schema from a photo entity, tags, and comment count."""
+    """Build a photo response schema from a photo entity and prepared metadata."""
 
     # Use explicitly provided tags when the caller already has a safe loaded
     # list; otherwise fall back to the ORM relationship on the photo entity.
@@ -351,6 +352,11 @@ def build_photo_response(
         created_at=photo.created_at,
         comments_count=(
             comments_count if comments_count is not None else 0
+        ),
+        average_rating=(
+            round(average_rating, 1)
+            if average_rating is not None
+            else 0.0
         ),
     )
 

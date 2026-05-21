@@ -42,6 +42,7 @@ class PhotoResponseSchema(BaseModel):
     tags: list[TagResponseShema]
     created_at: datetime
     comments_count: int
+    average_rating: float
 
 
 class PaginatedPhotoResponseSchema(BaseModel):

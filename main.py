@@ -13,7 +13,7 @@ from src.config.handlers import validation_exception_handler
 from src.config.middlewares import setup_cors
 from src.database.db import get_db
 from src.helpers.create_exception import create_exception
-from src.routes import auth, comment, photo, user
+from src.routes import auth, comment, photo, photo_rating, user
 from src.services.token_blacklist import token_blacklist_service
 
 
@@ -42,6 +42,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(user.router, prefix="/api")
 app.include_router(photo.router, prefix="/api")
 app.include_router(comment.router, prefix="/api")
+app.include_router(photo_rating.router, prefix="/api")
 
 
 @app.get("/")

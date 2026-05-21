@@ -10,6 +10,7 @@ from src.entity.photo import (
     Tag,
     TransformationType,
 )
+from src.entity.photo_rating import PhotoRating
 
 
 async def create_photo(
@@ -222,3 +223,15 @@ async def get_photo_transformation_by_id(
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def get_photo_average_rating(
+    photo_id: int, db: AsyncSession
+) -> float:
+    """Return the average rating value for the specified photo."""
+
+    stmt = select(func.avg(PhotoRating.rating)).filter_by(
+        photo_id=photo_id
+    )
+    average_rating = await db.scalar(stmt)
+    return float(average_rating or 0)

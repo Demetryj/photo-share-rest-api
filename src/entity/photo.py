@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.entity.models import Base, LastModifiedMixin
 
 if TYPE_CHECKING:
+    from src.entity.photo_rating import PhotoRating
     from src.entity.user import User
 
 
@@ -101,6 +102,11 @@ class Photo(Base, LastModifiedMixin):
             back_populates="photo",
             cascade="all, delete-orphan",
         )
+    )
+    ratings: Mapped[list["PhotoRating"]] = relationship(
+        "PhotoRating",
+        back_populates="photo",
+        cascade="all, delete-orphan",
     )
 
 
