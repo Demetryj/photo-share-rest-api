@@ -13,7 +13,7 @@ from pydantic import (
     field_validator,
 )
 
-from src.config.messages import UserValidationMessages
+from src.config.messages import ValidationMessages
 from src.entity.user import Role
 
 PASSWORD_SPECIAL_CHARS = "!@#$%^&*"
@@ -38,19 +38,19 @@ class BaseAuthUserRequestSchema(BaseModel):
     def validate_password(cls, value: str) -> str:
         if not any(ch.islower() for ch in value):
             raise ValueError(
-                UserValidationMessages.password_requires_lowercase.value
+                ValidationMessages.password_requires_lowercase.value
             )
         if not any(ch.isupper() for ch in value):
             raise ValueError(
-                UserValidationMessages.password_requires_uppercase.value
+                ValidationMessages.password_requires_uppercase.value
             )
         if not any(ch.isdigit() for ch in value):
             raise ValueError(
-                UserValidationMessages.password_requires_digit.value
+                ValidationMessages.password_requires_digit.value
             )
         if not any(ch in PASSWORD_SPECIAL_CHARS for ch in value):
             raise ValueError(
-                f"{UserValidationMessages.password_requires_special_character.value} {PASSWORD_SPECIAL_CHARS}."
+                f"{ValidationMessages.password_requires_special_character.value} {PASSWORD_SPECIAL_CHARS}."
             )
         return value
 
@@ -65,7 +65,7 @@ class SignUpRequestSchema(BaseAuthUserRequestSchema):
     def validate_username(cls, value: str) -> str:
         if not USERNAME_PATTERN.fullmatch(value):
             raise ValueError(
-                UserValidationMessages.username_has_invalid_format.value
+                ValidationMessages.username_has_invalid_format.value
             )
         return value
 

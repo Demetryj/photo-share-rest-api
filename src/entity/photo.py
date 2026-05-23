@@ -25,13 +25,6 @@ if TYPE_CHECKING:
     from src.entity.user import User
 
 
-class PhotoSortBy(str, enum.Enum):
-    """Supported sorting options for filtered photo search results."""
-
-    date = "date"
-    rating = "rating"
-
-
 class TransformationType(enum.Enum):
     """Allowed Cloudinary-based operations for transformed photo links."""
 
@@ -47,6 +40,13 @@ class BlurMode(enum.Enum):
 
     gaussian = "gaussian"
     box = "box"
+
+
+class SortField(str, enum.Enum):
+    """Supported fields for filtered photo search sorting."""
+
+    rating = "rating"
+    date = "date"
 
 
 # Association table for the many-to-many relationship between photos and tags.

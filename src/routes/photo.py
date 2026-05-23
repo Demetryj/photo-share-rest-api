@@ -1,7 +1,7 @@
 """FastAPI routes for photo management and transformation workflows."""
 
 import math
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
@@ -22,11 +22,13 @@ from src.config.messages import (
     AUTHENTICATED_USERS_ACCESS,
     OWNER_OR_ADMIN_ACCESS,
     HTTPStatusMessages,
+    ValidationMessages,
 )
 from src.config.settings import settings
 from src.database.db import get_db
-from src.entity.photo import PhotoSortBy
-from src.entity.user import User
+from src.entity.models import SortBy
+from src.entity.photo import SortField
+from src.entity.user import Role, User
 from src.helpers.create_exception import create_exception
 from src.repository import comment as repository_comment
 from src.repository import photo as repository_photo
@@ -269,36 +271,77 @@ async def get_all_photo_by_user_id(
     response_description=HTTPStatusMessages.success.value,
     description=(
         "Search photos by description keyword or tag and return a paginated list of results.\n\n"
-        "Use `query` for text search. If the value starts with `#`, it is treated as a tag search.\n"
-        "You can additionally filter results by minimum average rating and sort them by rating or creation date.\n\n"
+        "Use `query` for text search. If the value starts with `#`, it is treated as a tag search.\n\n"
+        "Moderators and administrators can additionally filter results by uploader username via `author_username`.\n\n"
+        "You can additionally filter results by open rating and date ranges.\n\n"
+        "Supported combinations: `min_rating`, `max_rating`, `date_from`, `date_to`, or any combination of them.\n\n"
+        "Sorting is controlled by `sort_field` (`rating` or `date`) together with `sort_by` (`asc` or `desc`).\n\n"
         f"{AUTHENTICATED_USERS_ACCESS}"
     ),
     dependencies=[Depends(role_service.authenticated_users)],
 )
 async def get_filtered_photos_by_keyword_or_tag(
+    author_username: str | None = Query(default=None),
     query: str | None = Query(default=None),
     min_rating: float | None = Query(default=None, ge=0, le=5),
-    sort_by: PhotoSortBy | None = Query(default=None),
+    max_rating: float | None = Query(default=None, ge=0, le=5),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    sort_field: SortField | None = Query(default=None),
+    sort_by: SortBy | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=10, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(auth_service.get_current_user),
+    current_user: User = Depends(auth_service.get_current_user),
 ) -> PaginatedPhotoResponseSchema:
     """Return a paginated filtered photo list for authenticated users.
 
     The endpoint supports searching by photo description text or by tag when
-    the query starts with ``#``. After search is applied, results can be
-    filtered by minimum average rating and sorted either by rating or by
-    creation date.
+    the query starts with ``#``. Staff users can additionally filter photos
+    by uploader username. After search is applied, results can be filtered by
+    open rating and date ranges. Sorting is configured explicitly by the
+    requested field and direction.
     """
+    if (
+        min_rating is not None
+        and max_rating is not None
+        and min_rating > max_rating
+    ):
+        create_exception(
+            message=ValidationMessages.min_rating_must_be_less_than_or_equal_to_max_rating.value
+        )
+
+    if (
+        date_from is not None
+        and date_to is not None
+        and date_from > date_to
+    ):
+        create_exception(
+            message=ValidationMessages.date_from_must_be_less_than_or_equal_to_date_to.value
+        )
+
+    # Filtering by uploader username is reserved for staff roles.
+    if author_username is not None and current_user.role not in {
+        Role.admin,
+        Role.moderator,
+    }:
+        create_exception(
+            status_code=status.HTTP_403_FORBIDDEN,
+            message=HTTPStatusMessages.access_denied.value,
+        )
 
     offset = (page - 1) * per_page
 
     photo_list = (
         await repository_photo.get_filtered_photos_by_keyword_or_tag(
             db=db,
+            author_username=author_username,
             query=query,
             min_rating=min_rating,
+            max_rating=max_rating,
+            date_from=date_from,
+            date_to=date_to,
+            sort_field=sort_field,
             sort_by=sort_by,
             offset=offset,
             limit=per_page,
@@ -324,8 +367,12 @@ async def get_filtered_photos_by_keyword_or_tag(
     # not just on the current page after limit/offset are applied.
     total_photos = await repository_photo.count_filtered_photos_by_keyword_or_tag(
         db=db,
+        author_username=author_username,
         query=query,
         min_rating=min_rating,
+        max_rating=max_rating,
+        date_from=date_from,
+        date_to=date_to,
     )
     total_pages = (
         math.ceil(total_photos / per_page) if total_photos else 0

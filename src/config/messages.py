@@ -43,7 +43,7 @@ class EmailMessages(Enum):
     check_email_forconfirmation = "Check your email for confirmation."
 
 
-class UserValidationMessages(Enum):
+class ValidationMessages(Enum):
     password_requires_lowercase = (
         "Password must contain at least one lowercase letter."
     )
@@ -59,6 +59,12 @@ class UserValidationMessages(Enum):
     username_has_invalid_format = "Username must start with a lowercase letter and contain only lowercase letters, digits, and underscores, and it must not end with an underscore."
     display_name_must_not_be_empty = "Display name must not be empty."
     display_name_contains_invalid_characters = "Display name may contain only letters, spaces, hyphens, and apostrophes."
+    min_rating_must_be_less_than_or_equal_to_max_rating = (
+        "min_rating must be less than or equal to max_rating."
+    )
+    date_from_must_be_less_than_or_equal_to_date_to = (
+        "date_from must be less than or equal to date_to."
+    )
 
 
 OWNER_OR_ADMIN_ACCESS = "Accessible by the photo owner or an admin."

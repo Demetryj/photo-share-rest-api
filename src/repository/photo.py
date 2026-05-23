@@ -1,18 +1,22 @@
 """Repository helpers for photos, tags, and saved transformations."""
 
+from datetime import date
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.entity.models import SortBy
 from src.entity.photo import (
     Photo,
-    PhotoSortBy,
     PhotoTransformation,
+    SortField,
     Tag,
     TransformationType,
     photo_tags,
 )
 from src.entity.photo_rating import PhotoRating
+from src.entity.user import User
 
 
 async def create_photo(
@@ -78,8 +82,12 @@ async def get_photos_by_user_id(
 
 
 def _build_filtered_photos_stmt(
+    author_username: str | None = None,
     query: str | None = None,
     min_rating: float | None = None,
+    max_rating: float | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ):
     """Build the shared filtered-photo query for listing and counting.
 
@@ -87,6 +95,11 @@ def _build_filtered_photos_stmt(
     page of results and another to calculate the total number of matching
     photos. Both queries must use identical filtering rules, so this helper
     centralizes the shared statement construction in one place.
+
+    Rating and date filters support open ranges: the caller may pass only the
+    lower bound, only the upper bound, or both bounds together. Staff users
+    can also narrow results to photos uploaded by authors whose usernames
+    match the provided author search fragment.
     """
 
     # Photos without ratings should get an aggregated value of 0 instead of NULL.
@@ -103,6 +116,7 @@ def _build_filtered_photos_stmt(
         .outerjoin(PhotoRating, PhotoRating.photo_id == Photo.id)
         .outerjoin(photo_tags, photo_tags.c.photo_id == Photo.id)
         .outerjoin(Tag, Tag.id == photo_tags.c.tag_id)
+        .outerjoin(User, User.id == Photo.owner_id)
         .group_by(Photo.id)
     )
 
@@ -118,9 +132,25 @@ def _build_filtered_photos_stmt(
         else:
             stmt = stmt.where(Photo.description.ilike(f"%{query}%"))
 
+    # Rating is an aggregate value, so every rating boundary must be applied
+    # via HAVING instead of WHERE.
     if min_rating is not None:
-        # Rating is an aggregate value, so the filter must be applied via HAVING.
         stmt = stmt.having(avg_rating >= min_rating)
+    if max_rating is not None:
+        stmt = stmt.having(avg_rating <= max_rating)
+
+    # Date filters work as an open or closed range over the photo creation date.
+    if date_from is not None:
+        stmt = stmt.where(func.date(Photo.created_at) >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(func.date(Photo.created_at) <= date_to)
+
+    if author_username:
+        # Author filtering works on the uploader's username, so staff users can
+        # find photos created by one specific user or by a partially matched group.
+        stmt = stmt.where(
+            User.username.ilike(f"%{author_username.strip()}%")
+        )
 
     return stmt, avg_rating
 
@@ -129,30 +159,54 @@ async def get_filtered_photos_by_keyword_or_tag(
     db: AsyncSession,
     limit: int,
     offset: int,
+    author_username: str | None = None,
     query: str | None = None,
     min_rating: float | None = None,
-    sort_by: PhotoSortBy | None = None,
+    max_rating: float | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    sort_field: SortField | None = None,
+    sort_by: SortBy | None = None,
 ) -> list[tuple[Photo, float]]:
-    """Search photos by description or tag and optionally filter by rating.
+    """Search photos with optional author, text, rating, and date filters.
 
     The query is interpreted as a tag search when it starts with ``#``.
     Results always include the aggregated average rating for each photo and
-    can be sorted either by that rating or by photo creation date.
+    support open rating and date ranges. Sorting uses the explicitly requested
+    field from ``sort_field`` and the direction from ``sort_by``. When
+    ``author_username`` is provided, the result is additionally filtered by
+    the uploader's username.
     """
     stmt, avg_rating = _build_filtered_photos_stmt(
+        author_username=author_username,
         query=query,
         min_rating=min_rating,
+        max_rating=max_rating,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    # Let the caller choose the primary sorting field explicitly instead of
+    # inferring it from which filters happen to be active in the request.
+    sorted_entity = (
+        avg_rating
+        if sort_field == SortField.rating
+        else Photo.created_at
     )
 
     match sort_by:
-        case PhotoSortBy.rating:
+        case SortBy.asc:
             stmt = stmt.order_by(
-                avg_rating.desc(), Photo.created_at.desc()
+                sorted_entity.asc(), Photo.created_at.asc()
             )
-        case PhotoSortBy.date:
-            stmt = stmt.order_by(Photo.created_at.desc())
+        case SortBy.desc:
+            stmt = stmt.order_by(
+                sorted_entity.desc(), Photo.created_at.desc()
+            )
         case _:
-            stmt = stmt.order_by(Photo.created_at.desc())
+            stmt = stmt.order_by(
+                sorted_entity.desc(), Photo.created_at.desc()
+            )
 
     stmt = stmt.limit(limit).offset(offset)
     result = await db.execute(stmt)
@@ -162,20 +216,29 @@ async def get_filtered_photos_by_keyword_or_tag(
 
 async def count_filtered_photos_by_keyword_or_tag(
     db: AsyncSession,
+    author_username: str | None = None,
     query: str | None = None,
     min_rating: float | None = None,
+    max_rating: float | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> int:
     """Return the total number of photos matching the current search filters.
 
     Pagination metadata must reflect the full filtered result set rather than
     only the current page after ``limit`` and ``offset``. This method reuses
     the same filtered query as the list method and counts its grouped rows in
-    a subquery, which keeps the total correct even with joins and aggregates.
+    a subquery, which keeps the total correct even with joins, aggregates,
+    and open rating/date ranges.
     """
 
     stmt, _ = _build_filtered_photos_stmt(
+        author_username=author_username,
         query=query,
         min_rating=min_rating,
+        max_rating=max_rating,
+        date_from=date_from,
+        date_to=date_to,
     )
 
     # Count grouped filtered rows in a subquery so the total is based on

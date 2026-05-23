@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.messages import (
     HTTPStatusMessages,
-    UserValidationMessages,
+    ValidationMessages,
 )
 from src.entity.user import Role, User
 from src.helpers.create_exception import create_exception
@@ -51,12 +51,12 @@ def validate_display_name_value(value: str | None) -> str | None:
 
     if not normalized_value:
         raise ValueError(
-            UserValidationMessages.display_name_must_not_be_empty.value
+            ValidationMessages.display_name_must_not_be_empty.value
         )
 
     if not DISPLAY_NAME_PATTERN.fullmatch(normalized_value):
         raise ValueError(
-            UserValidationMessages.display_name_contains_invalid_characters.value
+            ValidationMessages.display_name_contains_invalid_characters.value
         )
 
     return normalized_value

@@ -1,5 +1,6 @@
 """Shared SQLAlchemy declarative base and common model mixins."""
 
+import enum
 from datetime import datetime
 
 from sqlalchemy import (
@@ -26,3 +27,10 @@ class LastModifiedMixin:
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now()
     )
+
+
+class SortBy(str, enum.Enum):
+    """Supported sorting options."""
+
+    asc = "asc"
+    desc = "desc"
