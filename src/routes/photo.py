@@ -25,6 +25,7 @@ from src.config.messages import (
 )
 from src.config.settings import settings
 from src.database.db import get_db
+from src.entity.photo import PhotoSortBy
 from src.entity.user import User
 from src.helpers.create_exception import create_exception
 from src.repository import comment as repository_comment
@@ -262,6 +263,83 @@ async def get_all_photo_by_user_id(
     }
 
 
+@router.get(
+    "/",
+    response_model=PaginatedPhotoResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
+    description=(
+        "Search photos by description keyword or tag and return a paginated list of results.\n\n"
+        "Use `query` for text search. If the value starts with `#`, it is treated as a tag search.\n"
+        "You can additionally filter results by minimum average rating and sort them by rating or creation date.\n\n"
+        f"{AUTHENTICATED_USERS_ACCESS}"
+    ),
+    dependencies=[Depends(role_service.authenticated_users)],
+)
+async def get_filtered_photos_by_keyword_or_tag(
+    query: str | None = Query(default=None),
+    min_rating: float | None = Query(default=None, ge=0, le=5),
+    sort_by: PhotoSortBy | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=10, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(auth_service.get_current_user),
+) -> PaginatedPhotoResponseSchema:
+    """Return a paginated filtered photo list for authenticated users.
+
+    The endpoint supports searching by photo description text or by tag when
+    the query starts with ``#``. After search is applied, results can be
+    filtered by minimum average rating and sorted either by rating or by
+    creation date.
+    """
+
+    offset = (page - 1) * per_page
+
+    photo_list = (
+        await repository_photo.get_filtered_photos_by_keyword_or_tag(
+            db=db,
+            query=query,
+            min_rating=min_rating,
+            sort_by=sort_by,
+            offset=offset,
+            limit=per_page,
+        )
+    )
+
+    resp_photos = []
+    for photo, avg_rating in photo_list:
+        comments_count = await repository_comment.get_total_number_of_comments_on_photo(
+            photo_id=photo.id, db=db
+        )
+
+        # Reuse the aggregated rating returned by the repository instead of
+        # running one more average-rating query per photo.
+        item = photo_service.build_photo_response(
+            photo=photo,
+            comments_count=comments_count,
+            average_rating=avg_rating,
+        )
+        resp_photos.append(item)
+
+    # Total pagination metadata must be based on the full filtered result set,
+    # not just on the current page after limit/offset are applied.
+    total_photos = await repository_photo.count_filtered_photos_by_keyword_or_tag(
+        db=db,
+        query=query,
+        min_rating=min_rating,
+    )
+    total_pages = (
+        math.ceil(total_photos / per_page) if total_photos else 0
+    )
+
+    return {
+        "page": page,
+        "per_page": per_page,
+        "total": total_photos,
+        "total_pages": total_pages,
+        "items": resp_photos,
+    }
+
+
 # Delete photo
 @router.delete(
     "/{photo_id}",
@@ -400,8 +478,6 @@ async def add_photo_tags(
 
 
 # Generate a non-persistent preview for a requested photo transformation.
-
-
 @router.post(
     "/{photo_id}/transform-preview",
     response_description=HTTPStatusMessages.success.value,
@@ -452,8 +528,6 @@ async def preview_photo_transformation(
 
 
 # Create and persist a transformed photo link together with its QR code.
-
-
 @router.post(
     "/{photo_id}/transformations",
     response_model=PhotoTransformationResponseSchema,
@@ -526,8 +600,6 @@ async def create_photo_transformation(
 
 
 # List all saved transformation records for one photo.
-
-
 @router.get(
     "/{photo_id}/transformations",
     response_model=list[PhotoTransformationResponseSchema],
@@ -568,8 +640,6 @@ async def get_all_photo_transformations(
 
 
 # Return one saved transformation record by its identifier.
-
-
 @router.get(
     "/transformations/{transformation_id}",
     response_model=PhotoTransformationResponseSchema,

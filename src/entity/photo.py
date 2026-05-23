@@ -25,6 +25,13 @@ if TYPE_CHECKING:
     from src.entity.user import User
 
 
+class PhotoSortBy(str, enum.Enum):
+    """Supported sorting options for filtered photo search results."""
+
+    date = "date"
+    rating = "rating"
+
+
 class TransformationType(enum.Enum):
     """Allowed Cloudinary-based operations for transformed photo links."""
 

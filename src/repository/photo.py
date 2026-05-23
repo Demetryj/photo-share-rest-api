@@ -6,9 +6,11 @@ from sqlalchemy.orm import selectinload
 
 from src.entity.photo import (
     Photo,
+    PhotoSortBy,
     PhotoTransformation,
     Tag,
     TransformationType,
+    photo_tags,
 )
 from src.entity.photo_rating import PhotoRating
 
@@ -73,6 +75,114 @@ async def get_photos_by_user_id(
     )
     result = await db.execute(stmt)
     return result.scalars().all()
+
+
+def _build_filtered_photos_stmt(
+    query: str | None = None,
+    min_rating: float | None = None,
+):
+    """Build the shared filtered-photo query for listing and counting.
+
+    Search pagination needs two separate queries: one to fetch the current
+    page of results and another to calculate the total number of matching
+    photos. Both queries must use identical filtering rules, so this helper
+    centralizes the shared statement construction in one place.
+    """
+
+    # Photos without ratings should get an aggregated value of 0 instead of NULL.
+    avg_rating = func.coalesce(func.avg(PhotoRating.rating), 0).label(
+        "avg_rating"
+    )
+
+    stmt = (
+        select(Photo, avg_rating)
+        # Preload tags because callers usually serialize the returned Photo
+        # objects, and lazy loading there may fail in async response code.
+        .options(selectinload(Photo.tags))
+        # Use outer joins so photos without ratings or tags still remain in the result set.
+        .outerjoin(PhotoRating, PhotoRating.photo_id == Photo.id)
+        .outerjoin(photo_tags, photo_tags.c.photo_id == Photo.id)
+        .outerjoin(Tag, Tag.id == photo_tags.c.tag_id)
+        .group_by(Photo.id)
+    )
+
+    if query:
+        query = query.strip()
+
+    if query:
+        if query.startswith("#"):
+            # `#tag` means search in tag names instead of description text.
+            tag = query[1:].strip()
+            if tag:
+                stmt = stmt.where(Tag.name.ilike(f"%{tag}%"))
+        else:
+            stmt = stmt.where(Photo.description.ilike(f"%{query}%"))
+
+    if min_rating is not None:
+        # Rating is an aggregate value, so the filter must be applied via HAVING.
+        stmt = stmt.having(avg_rating >= min_rating)
+
+    return stmt, avg_rating
+
+
+async def get_filtered_photos_by_keyword_or_tag(
+    db: AsyncSession,
+    limit: int,
+    offset: int,
+    query: str | None = None,
+    min_rating: float | None = None,
+    sort_by: PhotoSortBy | None = None,
+) -> list[tuple[Photo, float]]:
+    """Search photos by description or tag and optionally filter by rating.
+
+    The query is interpreted as a tag search when it starts with ``#``.
+    Results always include the aggregated average rating for each photo and
+    can be sorted either by that rating or by photo creation date.
+    """
+    stmt, avg_rating = _build_filtered_photos_stmt(
+        query=query,
+        min_rating=min_rating,
+    )
+
+    match sort_by:
+        case PhotoSortBy.rating:
+            stmt = stmt.order_by(
+                avg_rating.desc(), Photo.created_at.desc()
+            )
+        case PhotoSortBy.date:
+            stmt = stmt.order_by(Photo.created_at.desc())
+        case _:
+            stmt = stmt.order_by(Photo.created_at.desc())
+
+    stmt = stmt.limit(limit).offset(offset)
+    result = await db.execute(stmt)
+
+    return result.all()
+
+
+async def count_filtered_photos_by_keyword_or_tag(
+    db: AsyncSession,
+    query: str | None = None,
+    min_rating: float | None = None,
+) -> int:
+    """Return the total number of photos matching the current search filters.
+
+    Pagination metadata must reflect the full filtered result set rather than
+    only the current page after ``limit`` and ``offset``. This method reuses
+    the same filtered query as the list method and counts its grouped rows in
+    a subquery, which keeps the total correct even with joins and aggregates.
+    """
+
+    stmt, _ = _build_filtered_photos_stmt(
+        query=query,
+        min_rating=min_rating,
+    )
+
+    # Count grouped filtered rows in a subquery so the total is based on
+    # unique photos that matched the filters, not on joined child rows.
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = await db.scalar(count_stmt)
+    return int(total or 0)
 
 
 async def get_total_number_of_photos(
