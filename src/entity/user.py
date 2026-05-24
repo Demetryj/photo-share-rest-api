@@ -102,7 +102,6 @@ class UserSession(Base, LastModifiedMixin):
     )
 
 
-# TODO: додати cleanup для очищення таблиці раз на добу, додати в загальний іпорт та енв поетрі
 # Stores password reset JWT hashes and usage state to make reset links one-time.
 class PasswordResetToken(Base):
     """One-time password reset token bound to a user and expiration time."""

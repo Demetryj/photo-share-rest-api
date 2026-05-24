@@ -1,0 +1,2 @@
+# Run password reset token cleanup every day at 00:00 container time.
+0 0 * * * python -m src.scripts.cleanup_password_reset_tokens

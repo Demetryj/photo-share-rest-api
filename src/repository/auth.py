@@ -6,9 +6,9 @@ stores the refresh-token hash together with the currently active
 access-token JTI for that session.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.entity.user import PasswordResetToken, UserSession
@@ -205,3 +205,45 @@ async def mark_password_reset_token_as_used(
     db_token_obj.used_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(db_token_obj)
+
+
+# Delete old password-reset token records that are no longer needed.
+async def delete_old_password_reset_tokens(
+    older_than_days: int,
+    db: AsyncSession,
+) -> int:
+    """Delete old used or long-expired password reset tokens.
+
+    Deletes:
+    - tokens that were used more than ``older_than_days`` ago
+    - tokens that expired more than ``older_than_days`` ago
+
+    Returns the number of deleted rows.
+    """
+
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        days=older_than_days
+    )
+
+    stmt = (
+        delete(PasswordResetToken)
+        .where(
+            or_(
+                # Used tokens can be safely removed after retention window.
+                PasswordResetToken.used_at.is_not(None),
+                PasswordResetToken.expires_at < cutoff,
+            )
+        )
+        .where(
+            or_(
+                # Remove used tokens only after they are old enough.
+                PasswordResetToken.used_at < cutoff,
+                # Remove expired unused tokens after the same retention window.
+                PasswordResetToken.expires_at < cutoff,
+            )
+        )
+    )
+
+    result = await db.execute(stmt)
+    await db.commit()
+    return result.rowcount or 0

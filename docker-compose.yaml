@@ -69,5 +69,17 @@ services:
     ports:
       - "8000:8000"
 
+  cleanup_scheduler:
+    build: .
+    env_file: .env
+    volumes:
+      - ./:/app
+      - /app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+    # Run the password-reset cleanup job every day using the cron schedule file.
+    command: ["supercronic", "scripts/cleanup-cron"]
+
 volumes:
   postgres_data:
