@@ -15,9 +15,11 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
+from fastapi_limiter.depends import RateLimiter
 from pydantic import Field, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import rate_limiters
 from src.config.messages import (
     AUTHENTICATED_USERS_ACCESS,
     OWNER_OR_ADMIN_ACCESS,
@@ -45,7 +47,13 @@ from src.services import photo as photo_service
 from src.services import role as role_service
 from src.services.auth import auth_service
 
-router = APIRouter(prefix="/photos", tags=["photos"])
+router = APIRouter(
+    prefix="/photos",
+    tags=["photos"],
+    dependencies=[
+        Depends(RateLimiter(limiter=rate_limiters.photo_base_limiter))
+    ],
+)
 
 # Use Annotated aliases for multipart form fields so Pydantic can apply
 # validation constraints like max_length to the endpoint parameters.
@@ -80,7 +88,12 @@ TargetUserId = Annotated[
         "Upload a photo along with a description (optional) and tags (optional).\n\n"
         f"{OWNER_OR_ADMIN_ACCESS}"
     ),
-    dependencies=[Depends(role_service.authenticated_users)],
+    dependencies=[
+        Depends(role_service.authenticated_users),
+        Depends(
+            RateLimiter(limiter=rate_limiters.photo_upload_limiter)
+        ),
+    ],
 )
 async def upload_photo(
     file: UploadFile = File(
@@ -265,6 +278,7 @@ async def get_all_photo_by_user_id(
     }
 
 
+# Search photos with optional text, tag, author, rating, and date filters.
 @router.get(
     "/",
     response_model=PaginatedPhotoResponseSchema,
@@ -542,7 +556,14 @@ async def add_photo_tags(
         "(`gaussian` or `box`), where `blur_radius` controls blur intensity\n"
         "- `grayscale` does not require additional parameters"
     ),
-    dependencies=[Depends(role_service.authenticated_users)],
+    dependencies=[
+        Depends(role_service.authenticated_users),
+        Depends(
+            RateLimiter(
+                limiter=rate_limiters.photo_generate_preview_limiter
+            )
+        ),
+    ],
 )
 async def preview_photo_transformation(
     photo_id: int,
@@ -594,7 +615,14 @@ async def preview_photo_transformation(
         "(`gaussian` or `box`), where `blur_radius` controls blur intensity\n"
         "- `grayscale` does not require additional parameters"
     ),
-    dependencies=[Depends(role_service.authenticated_users)],
+    dependencies=[
+        Depends(role_service.authenticated_users),
+        Depends(
+            RateLimiter(
+                limiter=rate_limiters.photo_transformation_limiter
+            )
+        ),
+    ],
 )
 async def create_photo_transformation(
     photo_id: int,

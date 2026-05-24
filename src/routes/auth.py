@@ -15,8 +15,10 @@ from fastapi.responses import JSONResponse
 
 # from fastapi.responses import  RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
+from fastapi_limiter.depends import RateLimiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import rate_limiters
 from src.config.messages import EmailMessages, HTTPStatusMessages
 from src.config.settings import settings
 from src.database.db import get_db
@@ -45,7 +47,13 @@ REFRESH_TOKEN = "refresh_token"
 RESET_PASSWORD_TITLE = "Reset your password"
 RESET_PASSWORD_TEMPLATE = "reset_password.html"
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(
+    prefix="/auth",
+    tags=["auth"],
+    dependencies=[
+        Depends(RateLimiter(limiter=rate_limiters.auth_base_limiter))
+    ],
+)
 
 
 @router.post(
@@ -53,6 +61,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     response_model=SignUpResponseSchema,
     status_code=status.HTTP_201_CREATED,
     response_description=HTTPStatusMessages.successfully_created.value,
+    dependencies=[
+        Depends(
+            RateLimiter(limiter=rate_limiters.auth_signup_limiter)
+        )
+    ],
     description=(
         "Register a new user and send an email verification link.\n\n"
         "Username requirements:\n"
@@ -282,6 +295,13 @@ async def logout_from_all_devices(
 @router.get(
     "/confirm-email/{token}",
     response_description=HTTPStatusMessages.successful_email_verification.value,
+    dependencies=[
+        Depends(
+            RateLimiter(
+                limiter=rate_limiters.auth_confirm_email_limiter
+            )
+        )
+    ],
     description="Confirm a user's email address",
 )
 async def confirm_email(
@@ -312,6 +332,13 @@ async def confirm_email(
 @router.post(
     "/request-confirm-email",
     response_description=HTTPStatusMessages.success.value,
+    dependencies=[
+        Depends(
+            RateLimiter(
+                limiter=rate_limiters.auth_request_email_limiter
+            )
+        )
+    ],
     description="Request a new email confirmation message",
 )
 async def request_confirm_email(
@@ -362,6 +389,13 @@ async def request_confirm_email(
     "/refresh",
     response_model=SignInResponse,
     response_description=HTTPStatusMessages.success.value,
+    dependencies=[
+        Depends(
+            RateLimiter(
+                limiter=rate_limiters.auth_refresh_token_limiter
+            )
+        )
+    ],
     description=(
         "Issue a new access token and rotate the refresh cookie. "
         "This endpoint reads the refresh token from an HttpOnly cookie, so "
@@ -466,6 +500,13 @@ async def refresh_token(
     "/password-reset/request",
     response_model=MessageResponseSchema,
     response_description=HTTPStatusMessages.success.value,
+    dependencies=[
+        Depends(
+            RateLimiter(
+                limiter=rate_limiters.auth_reset_password_limiter
+            )
+        )
+    ],
     description=(
         "Request a password reset email.\n\n"
         """When the account exists, the endpoint creates or replaces the

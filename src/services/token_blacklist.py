@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from redis.asyncio import Redis
 
-from src.config.settings import settings
+from src.services.redis_client import get_async_redis_client
 
 
 class TokenBlacklistService:
@@ -14,17 +14,12 @@ class TokenBlacklistService:
         self._redis: Redis | None = None
         self._prefix = "blacklist:access"
 
+    # Lazily create and cache one async Redis client for blacklist operations.
     async def get_redis(self) -> Redis:
         """Return a cached Redis client, creating it on first use."""
 
         if self._redis is None:
-            self._redis = Redis(
-                host=settings.REDIS_DOMAIN,
-                port=settings.REDIS_PORT,
-                db=settings.REDIS_DB,
-                password=settings.REDIS_PASSWORD,
-                decode_responses=True,
-            )
+            self._redis = get_async_redis_client()
         return self._redis
 
     async def close(self) -> None:
@@ -34,12 +29,17 @@ class TokenBlacklistService:
             await self._redis.aclose()
             self._redis = None
 
-    def _get_token_jti(self, token: str) -> str | None:
-        """Extract the token ``jti`` claim or return ``None``."""
+    def _get_auth_service(self):
+        """Return the shared auth service without creating a top-level cycle."""
 
         from src.services.auth import auth_service
 
-        return auth_service.get_token_jti(token)
+        return auth_service
+
+    def _get_token_jti(self, token: str) -> str | None:
+        """Extract the token ``jti`` claim or return ``None``."""
+
+        return self._get_auth_service().get_token_jti(token)
 
     def _build_key(self, token: str) -> str | None:
         """Build a namespaced Redis key for a revoked access token."""
@@ -54,9 +54,8 @@ class TokenBlacklistService:
 
         If the token is invalid or already expired, return 0.
         """
-        from src.services.auth import auth_service
 
-        exp = auth_service.get_token_exp(token)
+        exp = self._get_auth_service().get_token_exp(token)
         if exp is None:
             return 0
 
@@ -83,7 +82,7 @@ class TokenBlacklistService:
         await redis.set(key, "1", ex=ttl)
 
     async def is_blacklisted(self, token: str) -> bool:
-        """Return True when the token is already present in blacklist."""
+        """Return ``True`` when the token is already blacklisted."""
 
         key = self._build_key(token)
         if key is None:

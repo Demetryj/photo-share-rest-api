@@ -1,8 +1,10 @@
 import math
 
 from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi_limiter.depends import RateLimiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import rate_limiters
 from src.config.messages import (
     AUTHENTICATED_USERS_ACCESS,
     STAFF_ACCESS,
@@ -21,7 +23,17 @@ from src.schemas.photo_rating import (
 from src.services import role as role_service
 from src.services.auth import auth_service
 
-router = APIRouter(prefix="/photos", tags=["photo-rating"])
+router = APIRouter(
+    prefix="/photos",
+    tags=["photo-rating"],
+    dependencies=[
+        Depends(
+            RateLimiter(
+                limiter=rate_limiters.photo_rating_base_limiter
+            )
+        )
+    ],
+)
 
 
 # Create one user rating for a photo if the user has not rated it before.

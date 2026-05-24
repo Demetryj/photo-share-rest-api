@@ -9,8 +9,10 @@ from fastapi import (
     Response,
     status,
 )
+from fastapi_limiter.depends import RateLimiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import rate_limiters
 from src.config.messages import (
     AUTHENTICATED_USERS_ACCESS,
     STAFF_ACCESS,
@@ -32,7 +34,15 @@ from src.services.comment import (
 )
 from src.services.role import authenticated_users, staff_only
 
-router = APIRouter(prefix="/photos", tags=["comments"])
+router = APIRouter(
+    prefix="/photos",
+    tags=["comments"],
+    dependencies=[
+        Depends(
+            RateLimiter(limiter=rate_limiters.comment_base_limiter)
+        )
+    ],
+)
 
 
 # Create comment to photo

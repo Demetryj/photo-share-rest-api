@@ -12,8 +12,10 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi_limiter.depends import RateLimiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.config import rate_limiters
 from src.config.messages import (
     ADMIN_ACCESS,
     AUTHENTICATED_USERS_ACCESS,
@@ -40,7 +42,13 @@ from src.services import user as user_service
 from src.services.auth import auth_service
 from src.services.role import admin_only, authenticated_users
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(
+    prefix="/users",
+    tags=["users"],
+    dependencies=[
+        Depends(RateLimiter(limiter=rate_limiters.user_base_limiter))
+    ],
+)
 
 ProfileDisplayNameForm = Annotated[
     str | None,
@@ -245,7 +253,14 @@ async def get_own_profile(
         "You may update display name and avatar. "
         "At least one field must be provided."
     ),
-    dependencies=[Depends(authenticated_users)],
+    dependencies=[
+        Depends(authenticated_users),
+        Depends(
+            RateLimiter(
+                limiter=rate_limiters.user_update_profile_limiter
+            )
+        ),
+    ],
 )
 async def update_own_user_profile(
     file: UploadFile | None = File(
