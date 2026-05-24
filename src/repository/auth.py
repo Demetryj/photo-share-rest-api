@@ -6,10 +6,12 @@ stores the refresh-token hash together with the currently active
 access-token JTI for that session.
 """
 
+from datetime import datetime, timezone
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.entity.user import UserSession
+from src.entity.user import PasswordResetToken, UserSession
 
 
 # Create and persist one user session for a device or browser.
@@ -133,3 +135,73 @@ async def delete_all_user_sessions_by_user_id(
     stmt = delete(UserSession).where(UserSession.user_id == user_id)
     await db.execute(stmt)
     await db.commit()
+
+
+# Create or replace the single active password-reset token for one user.
+async def create_password_reset_token(
+    user_id: int,
+    token_hash: str,
+    expires_at: datetime,
+    db: AsyncSession,
+) -> None:
+    """Create or update the user's single password-reset token record.
+
+    The function keeps at most one password-reset token row per user. If a
+    record already exists for that user, its token hash, expiration time,
+    and usage marker are replaced with the new values. Otherwise, a new
+    record is created.
+    """
+
+    # Keep at most one active password reset token row per user.
+    stmt = select(PasswordResetToken).filter_by(user_id=user_id)
+    result = await db.execute(stmt)
+    reset_token = result.scalar_one_or_none()
+
+    # Reuse the existing per-user token row when it already exists.
+    if reset_token is None:
+        # Create the initial token row for this user.
+        reset_token = PasswordResetToken(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        db.add(reset_token)
+
+    # Store the new token metadata and mark the token as not yet used.
+    reset_token.token_hash = token_hash
+    reset_token.expires_at = expires_at
+    reset_token.used_at = None
+
+    await db.commit()
+    await db.refresh(reset_token)
+
+
+# Fetch one password-reset token record by its stored token hash.
+async def get_password_reset_token_by_hash(
+    token_hash: str,
+    db: AsyncSession,
+) -> PasswordResetToken | None:
+    """Return one password-reset token record by its stored token hash."""
+
+    stmt = select(PasswordResetToken).filter_by(token_hash=token_hash)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+# Mark a stored password-reset token as used by setting its usage timestamp.
+async def mark_password_reset_token_as_used(
+    token_hash: str,
+    db: AsyncSession,
+) -> None:
+    """Mark the password-reset token as used."""
+
+    db_token_obj = await get_password_reset_token_by_hash(
+        token_hash=token_hash,
+        db=db,
+    )
+    if not db_token_obj:
+        return
+
+    db_token_obj.used_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(db_token_obj)

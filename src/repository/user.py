@@ -162,3 +162,24 @@ async def change_user_blocked_status(
     await db.refresh(user)
 
     return user
+
+
+async def update_user_password(
+    email: str,
+    hashed_password: str,
+    db: AsyncSession,
+) -> User | None:
+    """Update a user's stored password hash and return the updated user.
+
+    The function finds the user by email, returns ``None`` when the user
+    does not exist, and otherwise persists the new hashed password and
+    returns the refreshed user entity.
+    """
+
+    user = await get_user_by_email(email=email, db=db)
+    if user is None:
+        return None
+    user.password = hashed_password
+    await db.commit()
+    await db.refresh(user)
+    return user

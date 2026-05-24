@@ -7,6 +7,10 @@ from sqlalchemy import Connection, pool
 # from sqlalchemy import engine_from_config
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import src.entity.comment  # noqa: F401
+import src.entity.photo  # noqa: F401
+import src.entity.photo_rating  # noqa: F401
+import src.entity.user  # noqa: F401
 from src.config.settings import settings as app_config
 
 # import all entities (models)

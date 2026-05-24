@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     CLOUDINARY_API_SECRET: str
     CLOUDINARY_PUBLIC_ID_PREFIX: str = "photo_share"
 
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # TODO при деплої Значення має бути True.
     # Встановити відповідне значення в env.
     # Потрібно буде заначити в рідмі, що для локальної розробки False, а для проду True

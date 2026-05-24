@@ -14,3 +14,16 @@ class RequestEmail(BaseModel):
     """Request payload containing a user email address."""
 
     email: EmailStr
+
+
+class MessageResponseSchema(BaseModel):
+    """Generic response payload containing a single message."""
+
+    message: str
+
+
+class ResetPasswordRequestSchema(BaseModel):
+    """Request payload for confirming a password reset."""
+
+    token: str
+    password: str

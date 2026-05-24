@@ -1,5 +1,7 @@
 """FastAPI routes for user authentication and email confirmation flows."""
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -10,6 +12,8 @@ from fastapi import (
     status,
 )
 from fastapi.responses import JSONResponse
+
+# from fastapi.responses import  RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +24,12 @@ from src.entity.user import User
 from src.helpers.create_exception import create_exception
 from src.repository import auth as repository_auth
 from src.repository import user as repository_user
-from src.schemas.auth import RequestEmail, SignInResponse
+from src.schemas.auth import (
+    MessageResponseSchema,
+    RequestEmail,
+    ResetPasswordRequestSchema,
+    SignInResponse,
+)
 from src.schemas.user import (
     BaseAuthUserRequestSchema,
     SignUpRequestSchema,
@@ -33,6 +42,8 @@ from src.services.token_blacklist import token_blacklist_service
 EMAIL_VERIFY_TITLE = "Confirm your email"
 EMAIL_VERIFY_TEMPLATE = "verify_email.html"
 REFRESH_TOKEN = "refresh_token"
+RESET_PASSWORD_TITLE = "Reset your password"
+RESET_PASSWORD_TEMPLATE = "reset_password.html"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -449,3 +460,153 @@ async def refresh_token(
         max_age=auth_service.refresh_cookie_max_age,
     )
     return response
+
+
+@router.post(
+    "/password-reset/request",
+    response_model=MessageResponseSchema,
+    response_description=HTTPStatusMessages.success.value,
+    description=(
+        "Request a password reset email.\n\n"
+        """When the account exists, the endpoint creates or replaces the
+        current password-reset token for that user and sends an email with
+        the reset link. The response stays generic even when the email does
+        not exist."""
+    ),
+)
+async def password_reset_request(
+    body: RequestEmail,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Request a password reset email for an existing account.
+
+    The endpoint resolves the user by email, and when the account exists it
+    creates a short-lived password-reset token, stores its hash in the
+    database, and schedules a reset email to be sent in the background. The
+    response remains generic to avoid disclosing whether the email exists.
+    """
+
+    # Resolve the account by email, but do not expose whether it exists.
+    user = await repository_user.get_user_by_email(
+        email=body.email, db=db
+    )
+
+    if user:
+        # Create the raw reset token for the email link and persist only its hash.
+        token = auth_service.create_reset_password_token(
+            {"sub": user.email}
+        )
+        token_hash = auth_service.get_token_hash(token=token)
+
+        # Keep one active password-reset token record per user.
+        await repository_auth.create_password_reset_token(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(
+                minutes=auth_service.password_reset_token_minutes
+            ),
+            db=db,
+        )
+
+        # Send the reset email asynchronously so the API response is immediate.
+        background_tasks.add_task(
+            send_email,
+            email=user.email,
+            username=user.username,
+            host=request.base_url,
+            token=token,
+            subject=RESET_PASSWORD_TITLE,
+            template_name=RESET_PASSWORD_TEMPLATE,
+        )
+
+    return {
+        "message": EmailMessages.reset_password_email_exists.value
+    }
+
+
+@router.get(
+    "/password-reset/verify/{token}",
+    # status_code=status.HTTP_302_FOUND,
+    # responses={302: {"description": "Redirect to frontend reset page"}},
+    # description=(
+    #     "Validate the password reset token and redirect the user to the "
+    #     "frontend password reset page when the token is valid."
+    # ),
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_description=HTTPStatusMessages.success.value,
+    description=(
+        "Validate a password reset token.\n\n"
+        """This temporary REST-only version checks whether the token is valid,
+        exists in the database, has not been used yet, and has not expired.
+        When validation succeeds, the endpoint returns `204 No Content`."""
+    ),
+)
+async def password_reset_verify_token(
+    token: str, db: AsyncSession = Depends(get_db)
+) -> Response:
+    """Validate a password reset token and return success with no body.
+
+    This endpoint is currently used without a frontend redirect. It verifies
+    the JWT itself together with the stored password-reset token state in the
+    database and returns ``204 No Content`` when the token is valid.
+    """
+
+    await auth_service.validate_password_reset_token(
+        token=token, db=db
+    )
+
+    # frontend_url = (
+    #     f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    # )
+    # return RedirectResponse(url=frontend_url, status_code=status.HTTP_302_FOUND)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/password-reset/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_description=HTTPStatusMessages.success.value,
+    description=(
+        "Confirm a password reset and save the new password.\n\n"
+        """The endpoint validates the provided password reset token again,
+        updates the user's stored password hash, marks the reset token as
+        used, and returns `204 No Content` when the password change succeeds."""
+    ),
+)
+async def password_reset_confirm(
+    body: ResetPasswordRequestSchema,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Confirm a password reset and persist the new password.
+
+    The endpoint revalidates the password reset token against JWT and
+    database state, updates the user's stored password hash, marks the
+    password reset token as used, and returns ``204 No Content`` on success.
+    """
+
+    email = await auth_service.validate_password_reset_token(
+        token=body.token, db=db
+    )
+
+    updated_user = await repository_user.update_user_password(
+        email=email,
+        hashed_password=auth_service.create_hashed_password(
+            plain_password=body.password
+        ),
+        db=db,
+    )
+    if updated_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=HTTPStatusMessages.invalid_or_expired_password_reset_token.value,
+        )
+
+    token_hash = auth_service.get_token_hash(body.token)
+    await repository_auth.mark_password_reset_token_as_used(
+        token_hash, db=db
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -152,6 +152,27 @@ class AuthService:
         )
         return token
 
+    # Create a password-reset JWT with a dedicated scope and short lifetime.
+    def create_reset_password_token(
+        self,
+        payload: dict[str, Any],
+        expires_delta: Optional[int] = None,
+    ) -> str:
+        """Create a JWT token used for the password reset flow."""
+
+        token, _ = self.create_token(
+            payload=payload,
+            token_scope=self.password_reset_token,
+            expires_delta=timedelta(
+                minutes=(
+                    expires_delta
+                    if expires_delta
+                    else self.password_reset_token_minutes
+                )
+            ),
+        )
+        return token
+
     # Decode and validate JWT signature/expiration.
     def decode_token(self, token: str) -> dict[str, Any]:
         """Decode and validate a JWT."""
@@ -261,6 +282,70 @@ class AuthService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 message=HTTPStatusMessages.invalid_token_for_email_verification.value,
             )
+
+    # Validate a password-reset token and extract the user's email from `sub`.
+    def get_email_from_password_reset_token(self, token: str) -> str:
+        """Extract the user email from a password reset token."""
+
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=HTTPStatusMessages.invalid_or_expired_password_reset_token.value,
+        )
+
+        try:
+            payload = self.decode_token(token)
+            if payload.get("scope") != self.password_reset_token:
+                raise credentials_exception
+
+            email = payload.get("sub")
+            if email is None:
+                raise credentials_exception
+            return email
+        except JWTError:
+            raise credentials_exception
+
+    # Validate password reset token against JWT claims and stored DB state.
+    async def validate_password_reset_token(
+        self, token: str, db: AsyncSession
+    ) -> str:
+        """Validate a password reset token against JWT claims and database state.
+
+        The method validates the JWT signature, expiration, and reset-token
+        scope, resolves the stored token record by its deterministic hash,
+        rejects unknown, already used, or expired reset tokens, and returns
+        the email address from the token subject when validation succeeds.
+        """
+
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=HTTPStatusMessages.invalid_or_expired_password_reset_token.value,
+        )
+
+        # Validate JWT signature, expiration, and password-reset scope.
+        email = self.get_email_from_password_reset_token(token)
+
+        # Look up the stored reset token row by deterministic token hash.
+        token_hash = self.get_token_hash(token)
+        db_token_obj = (
+            await repository_auth.get_password_reset_token_by_hash(
+                token_hash=token_hash,
+                db=db,
+            )
+        )
+
+        # Reject tokens that were never issued by this application.
+        if db_token_obj is None:
+            raise credentials_exception
+
+        # Reject replay attempts for already used password reset links.
+        if db_token_obj.used_at is not None:
+            raise credentials_exception
+
+        # Reject tokens whose DB expiration timestamp has already passed.
+        if db_token_obj.expires_at <= datetime.now(timezone.utc):
+            raise credentials_exception
+
+        return email
 
     # Validate an access token against the Redis blacklist, JWT claims, the
     # persisted user-session record, and the current user state before

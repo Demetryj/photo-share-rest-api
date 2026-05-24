@@ -36,11 +36,18 @@ class HTTPStatusMessages(Enum):
 
     tag_already_exists = "Tag already exists"
 
+    invalid_or_expired_password_reset_token = (
+        "Invalid or expired password reset token"
+    )
+
 
 class EmailMessages(Enum):
     email_confirmed = "Email confirmed"
     email_already_confirmed = "Your email is already confirmed."
     check_email_forconfirmation = "Check your email for confirmation."
+    reset_password_email_exists = (
+        "If this email exists, password reset instructions were sent."
+    )
 
 
 class ValidationMessages(Enum):

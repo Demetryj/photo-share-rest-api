@@ -113,16 +113,19 @@ class PasswordResetToken(Base):
         primary_key=True, autoincrement=True
     )
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE")
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
     token_hash: Mapped[str] = mapped_column(
         String(1024), nullable=False, unique=True, index=True
     )
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False
+        DateTime(timezone=True), nullable=False
     )
     used_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True, default=None
+        DateTime(timezone=True), nullable=True, default=None
     )
 
     user: Mapped["User"] = relationship(

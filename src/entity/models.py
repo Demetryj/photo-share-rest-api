@@ -22,10 +22,12 @@ class LastModifiedMixin:
     """Mixin that adds creation and update timestamps to a model."""
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=func.now()
+        DateTime(timezone=True), default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
     )
 
 

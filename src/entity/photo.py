@@ -176,7 +176,7 @@ class PhotoTransformation(Base):
         String(1024), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=func.now(), nullable=False
+        DateTime(timezone=True), default=func.now(), nullable=False
     )
 
     photo: Mapped["Photo"] = relationship(
