@@ -63,7 +63,7 @@ class AuthService:
 
     # Build a JWT together with its generated JTI so callers can persist the
     # active token identifier without decoding the freshly created token.
-    def create_token(
+    def _create_token(
         self,
         payload: dict[str, Any],
         token_scope: str,
@@ -98,7 +98,7 @@ class AuthService:
     ) -> tuple[str, str]:
         """Create an access token for user authentication and return its JTI."""
 
-        return self.create_token(
+        return self._create_token(
             payload=payload,
             token_scope=self.access_token_name,
             expires_delta=timedelta(
@@ -118,7 +118,7 @@ class AuthService:
     ) -> str:
         """Create a refresh token for renewing user authentication."""
 
-        token, _ = self.create_token(
+        token, _ = self._create_token(
             payload=payload,
             token_scope=self.refresh_token_name,
             expires_delta=timedelta(
@@ -139,7 +139,7 @@ class AuthService:
     ) -> str:
         """Create a JWT token used to confirm a user's email address."""
 
-        token, _ = self.create_token(
+        token, _ = self._create_token(
             payload=payload,
             token_scope=self.email_confirm_token_name,
             expires_delta=timedelta(
@@ -160,7 +160,7 @@ class AuthService:
     ) -> str:
         """Create a JWT token used for the password reset flow."""
 
-        token, _ = self.create_token(
+        token, _ = self._create_token(
             payload=payload,
             token_scope=self.password_reset_token,
             expires_delta=timedelta(
@@ -279,7 +279,7 @@ class AuthService:
             return email
         except JWTError:
             create_exception(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 message=HTTPStatusMessages.invalid_token_for_email_verification.value,
             )
 
