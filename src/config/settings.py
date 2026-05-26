@@ -71,24 +71,13 @@ class Settings(BaseSettings):
         """
         Build the SQLAlchemy async PostgreSQL connection URL.
 
-        For Supabase Session Pooler connections, the URL additionally disables
-        ``asyncpg`` statement caching because PgBouncer transaction pooling can
-        conflict with prepared statements.
-
         :return: PostgreSQL connection URL for ``asyncpg``.
         :rtype: str
         """
-        base_url = (
+        return (
             f"postgresql+asyncpg://{self.PSG_DB_USER}:{self.PSG_DB_PASSWORD}"
             f"@{self.PSG_DB_DOMAIN}:{self.PSG_DB_PORT}/{self.PSG_DB_NAME}"
         )
-
-        # Supabase Session Pooler uses PgBouncer. Disable asyncpg statement
-        # caching for that path so runtime queries work correctly on Render.
-        if self.PSG_DB_PORT == 6543 or "pooler" in self.PSG_DB_DOMAIN:
-            return f"{base_url}?statement_cache_size=0"
-
-        return base_url
 
 
 settings = Settings()

@@ -31,7 +31,23 @@ class DatabaseSessionManager:
         :type db_url: str
         """
 
-        self._engine: AsyncEngine | None = create_async_engine(db_url)
+        connect_args = {}
+
+        # This branch exists specifically for Supabase Session Pooler, which
+        # uses PgBouncer transaction pooling. Disable asyncpg statement
+        # caching for that connection path to avoid prepared-statement
+        # conflicts in production, while keeping local direct PostgreSQL
+        # connections unchanged.
+        if (
+            settings.PSG_DB_PORT == 6543
+            or "pooler" in settings.PSG_DB_DOMAIN
+        ):
+            connect_args["statement_cache_size"] = 0
+
+        self._engine: AsyncEngine | None = create_async_engine(
+            db_url,
+            connect_args=connect_args,
+        )
         self._session_maker: async_sessionmaker | None = (
             async_sessionmaker(
                 autoflush=False,
