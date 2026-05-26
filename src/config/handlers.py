@@ -1,11 +1,14 @@
 """Application exception handlers."""
 
 from fastapi import Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+):
     """Return a normalized response for request validation errors.
 
     :param request: Incoming request that failed validation.
@@ -18,7 +21,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=400,
         content={
-            "detail": exc.errors(),
+            # Pydantic validation details may include non-JSON-serializable
+            # objects such as ValueError instances. Normalize them before
+            # building the JSON response.
+            "detail": jsonable_encoder(exc.errors()),
             "message": "Bad Request",
         },
     )
