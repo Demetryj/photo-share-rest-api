@@ -27,8 +27,8 @@ config = ConnectionConfig(
     MAIL_PORT=settings.MAIL_PORT,
     MAIL_SERVER=settings.MAIL_SERVER,
     MAIL_FROM_NAME="Photo share System",
-    MAIL_STARTTLS=True,
-    MAIL_SSL_TLS=False,
+    MAIL_STARTTLS=settings.MAIL_STARTTLS,
+    MAIL_SSL_TLS=settings.MAIL_SSL_TLS,
     USE_CREDENTIALS=True,
     VALIDATE_CERTS=True,
     TEMPLATE_FOLDER=Path(__file__).parent / "templates",
@@ -55,11 +55,17 @@ async def send_email(
         message = MessageSchema(
             subject=subject,
             recipients=[email],
-            template_body={"host": host, "username": username, "token": token},
+            template_body={
+                "host": host,
+                "username": username,
+                "token": token,
+            },
             subtype=MessageType.html,
         )
 
         smtp_server = FastMail(config=config)
-        await smtp_server.send_message(message=message, template_name=template_name)
+        await smtp_server.send_message(
+            message=message, template_name=template_name
+        )
     except ConnectionErrors as err:
         logger.exception(err)

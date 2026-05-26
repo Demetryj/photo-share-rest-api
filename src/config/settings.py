@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     MAIL_FROM: EmailStr
     MAIL_PORT: int = 2525
     MAIL_SERVER: str = "sandbox.smtp.mailtrap.io"
+    MAIL_STARTTLS: bool = True
+    MAIL_SSL_TLS: bool = False
 
     REDIS_DOMAIN: str
     REDIS_PORT: int = 6379
