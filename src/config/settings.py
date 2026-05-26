@@ -4,12 +4,18 @@ Local runs can read values from the project `.env` file, while Docker Compose
 can still override them by passing real environment variables into the process.
 """
 
+from enum import Enum
 from pathlib import Path
 
 from pydantic import EmailStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+
+
+class EmailProvider(str, Enum):
+    smtp = "smtp"
+    brevo_api = "brevo_api"
 
 
 class Settings(BaseSettings):
@@ -42,6 +48,12 @@ class Settings(BaseSettings):
     MAIL_SERVER: str = "sandbox.smtp.mailtrap.io"
     MAIL_STARTTLS: bool = True
     MAIL_SSL_TLS: bool = False
+    MAIL_FROM_NAME: str = "Photo Share API"
+
+    # smtp -> local/dev sending through FastMail + SMTP
+    # brevo_api -> production sending through Brevo HTTPS API
+    EMAIL_PROVIDER: EmailProvider = EmailProvider.smtp
+    BREVO_API_KEY: str | None = None
 
     REDIS_DOMAIN: str
     REDIS_PORT: int = 6379
