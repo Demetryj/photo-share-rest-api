@@ -68,6 +68,7 @@ router = APIRouter(
     ],
     description=(
         "Register a new user and send an email verification link.\n\n"
+        "Both email and username must be unique.\n\n"
         "Username requirements:\n"
         "- length must be between 3 and 30 characters\n"
         "- must start with a lowercase letter\n"
@@ -83,13 +84,25 @@ async def register(
 ) -> SignUpResponseSchema:
     """Register a new user and send an email verification link.
 
-    Creates a new user account with a hashed password, generates an email
+    Validates that both the submitted email and username are unique, creates
+    a new user account with a hashed password, generates an email
     confirmation token, and schedules a background task to send the
     verification email.
     """
 
     user = await repository_user.get_user_by_email(
         email=body.email, db=db
+    )
+
+    if user:
+        create_exception(
+            status_code=status.HTTP_409_CONFLICT,
+            message=HTTPStatusMessages.account_already_exists.value,
+        )
+
+    user = await repository_user.get_user_by_username(
+        username=body.username,
+        db=db,
     )
 
     if user:

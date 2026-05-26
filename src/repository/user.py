@@ -17,6 +17,16 @@ async def get_user_by_email(
     return user.scalar_one_or_none()
 
 
+async def get_user_by_username(
+    username: str, db: AsyncSession
+) -> User | None:
+    """Return a user by username."""
+
+    stmt = select(User).filter_by(username=username)
+    user = await db.execute(stmt)
+    return user.scalar_one_or_none()
+
+
 async def get_user_by_id(
     user_id: str, db: AsyncSession
 ) -> User | None:
@@ -71,9 +81,7 @@ async def get_profile_by_username(
 ) -> User | None:
     """Return a user entity by username for public profile lookups."""
 
-    stmt = select(User).filter_by(username=username)
-    result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+    return await get_user_by_username(username=username, db=db)
 
 
 async def get_all_users(
