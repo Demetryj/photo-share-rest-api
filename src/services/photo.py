@@ -429,12 +429,18 @@ async def download_original_photo(photo: Photo) -> bytes:
     so it can be used for local preview transformations.
     """
 
-    async with httpx.AsyncClient(
-        timeout=HTTP_CLIENT_TIMEOUT
-    ) as client:
-        response = await client.get(photo.image_url)
-        response.raise_for_status()
-        return response.content
+    try:
+        async with httpx.AsyncClient(
+            timeout=HTTP_CLIENT_TIMEOUT
+        ) as client:
+            response = await client.get(photo.image_url)
+            response.raise_for_status()
+            return response.content
+    except (httpx.RequestError, httpx.HTTPStatusError):
+        create_exception(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            message=PhotoTransformationMessage.failed_to_download_original_photo.value,
+        )
 
 
 def apply_preview_transformation(
@@ -493,7 +499,13 @@ async def build_preview_response(
     """
 
     original_bytes = await download_original_photo(photo)
-    image = Image.open(BytesIO(original_bytes)).convert("RGB")
+    try:
+        image = Image.open(BytesIO(original_bytes)).convert("RGB")
+    except (UnidentifiedImageError, OSError):
+        create_exception(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            message=PhotoTransformationMessage.original_photo_content_is_not_a_valid_image.value,
+        )
 
     preview_image = apply_preview_transformation(
         image=image,

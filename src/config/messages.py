@@ -92,3 +92,9 @@ class PhotoTransformationMessage(Enum):
     unsupported_transformation_type = (
         "Unsupported transformation type."
     )
+    failed_to_download_original_photo = (
+        "Failed to download the original photo."
+    )
+    original_photo_content_is_not_a_valid_image = (
+        "Original photo content is not a valid image."
+    )
