@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.entity.user import Role, User
 from src.services import user as user_service
@@ -12,11 +11,11 @@ from src.services import user as user_service
 
 @pytest.mark.asyncio
 async def test_get_photos_and_comments_counts_returns_both_aggregates(
+    db_session_mock: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Return both photo and comment counters from repository helpers."""
 
-    db = AsyncMock(spec=AsyncSession)
     photo_count_mock = AsyncMock(return_value=6)
     comment_count_mock = AsyncMock(return_value=9)
     monkeypatch.setattr(
@@ -30,7 +29,7 @@ async def test_get_photos_and_comments_counts_returns_both_aggregates(
 
     result = await user_service.get_photos_and_comments_counts(
         user_id=4,
-        db=db,
+        db=db_session_mock,
     )
 
     assert result == {"photos_count": 6, "comments_count": 9}

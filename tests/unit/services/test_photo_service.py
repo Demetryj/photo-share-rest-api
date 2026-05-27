@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.entity.photo import BlurMode, Photo, Tag, TransformationType
 from src.entity.user import Role, User
@@ -43,15 +42,12 @@ def test_normalize_image_tags_raises_for_duplicate_tags() -> None:
 
 @pytest.mark.asyncio
 async def test_prepare_photo_tags_returns_resolved_tags_and_schemas(
+    db_session_mock: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Resolve normalized tags and return both ORM tags and response schemas."""
 
-    db = AsyncMock(spec=AsyncSession)
-
-    async def fake_get_or_create_tag(
-        tag: str, db: AsyncSession
-    ) -> Tag:
+    async def fake_get_or_create_tag(tag: str, db) -> Tag:
         return Tag(id=len(tag), name=tag)
 
     monkeypatch.setattr(
@@ -61,7 +57,7 @@ async def test_prepare_photo_tags_returns_resolved_tags_and_schemas(
 
     tag_list, tags_for_resp = await photo_service.prepare_photo_tags(
         tags=[" Nature ", "CITY"],
-        db=db,
+        db=db_session_mock,
     )
 
     assert [tag.name for tag in tag_list] == ["nature", "city"]
@@ -70,25 +66,25 @@ async def test_prepare_photo_tags_returns_resolved_tags_and_schemas(
 
 
 @pytest.mark.asyncio
-async def test_resolve_photo_owner_id_returns_current_user_id_by_default() -> (
-    None
-):
+async def test_resolve_photo_owner_id_returns_current_user_id_by_default(
+    db_session_mock: AsyncMock,
+) -> None:
     """Return the current user's id when no target user id is provided."""
 
     current_user = User(id=10, role=Role.user)
 
     owner_id = await photo_service.resolve_photo_owner_id(
         current_user=current_user,
-        db=AsyncMock(spec=AsyncSession),
+        db=db_session_mock,
     )
 
     assert owner_id == current_user.id
 
 
 @pytest.mark.asyncio
-async def test_resolve_photo_owner_id_raises_403_for_non_admin_target_user() -> (
-    None
-):
+async def test_resolve_photo_owner_id_raises_403_for_non_admin_target_user(
+    db_session_mock: AsyncMock,
+) -> None:
     """Raise 403 when a non-admin tries to upload a photo for another user."""
 
     current_user = User(id=10, role=Role.user)
@@ -96,7 +92,7 @@ async def test_resolve_photo_owner_id_raises_403_for_non_admin_target_user() -> 
     with pytest.raises(HTTPException) as exc_info:
         await photo_service.resolve_photo_owner_id(
             current_user=current_user,
-            db=AsyncMock(spec=AsyncSession),
+            db=db_session_mock,
             target_user_id=77,
         )
 
@@ -105,6 +101,7 @@ async def test_resolve_photo_owner_id_raises_403_for_non_admin_target_user() -> 
 
 @pytest.mark.asyncio
 async def test_resolve_photo_owner_id_raises_404_when_target_user_not_found(
+    db_session_mock: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Raise 404 when the admin-selected target user does not exist."""
@@ -119,7 +116,7 @@ async def test_resolve_photo_owner_id_raises_404_when_target_user_not_found(
     with pytest.raises(HTTPException) as exc_info:
         await photo_service.resolve_photo_owner_id(
             current_user=current_user,
-            db=AsyncMock(spec=AsyncSession),
+            db=db_session_mock,
             target_user_id=22,
         )
 

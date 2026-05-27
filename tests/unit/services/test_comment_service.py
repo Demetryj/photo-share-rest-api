@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.entity.comment import Comment
 from src.entity.photo import Photo
@@ -39,11 +38,11 @@ def test_build_comment_response_returns_serialized_comment() -> None:
 
 @pytest.mark.asyncio
 async def test_get_photo_or_404_returns_photo_when_it_exists(
+    db_session_mock: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Return the requested photo when the repository finds it."""
 
-    db = AsyncMock(spec=AsyncSession)
     photo = Photo(
         id=5,
         owner_id=1,
@@ -56,19 +55,25 @@ async def test_get_photo_or_404_returns_photo_when_it_exists(
         repository_mock,
     )
 
-    result = await comment_service.get_photo_or_404(photo_id=5, db=db)
+    result = await comment_service.get_photo_or_404(
+        photo_id=5,
+        db=db_session_mock,
+    )
 
-    repository_mock.assert_awaited_once_with(photo_id=5, db=db)
+    repository_mock.assert_awaited_once_with(
+        photo_id=5,
+        db=db_session_mock,
+    )
     assert result is photo
 
 
 @pytest.mark.asyncio
 async def test_get_photo_or_404_raises_404_when_photo_does_not_exist(
+    db_session_mock: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Raise 404 when the target photo does not exist."""
 
-    db = AsyncMock(spec=AsyncSession)
     repository_mock = AsyncMock(return_value=None)
     monkeypatch.setattr(
         "src.services.comment.repository_photo.get_photo_by_id",
@@ -76,7 +81,13 @@ async def test_get_photo_or_404_raises_404_when_photo_does_not_exist(
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await comment_service.get_photo_or_404(photo_id=99, db=db)
+        await comment_service.get_photo_or_404(
+            photo_id=99,
+            db=db_session_mock,
+        )
 
-    repository_mock.assert_awaited_once_with(photo_id=99, db=db)
+    repository_mock.assert_awaited_once_with(
+        photo_id=99,
+        db=db_session_mock,
+    )
     assert exc_info.value.status_code == 404

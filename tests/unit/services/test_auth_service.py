@@ -8,7 +8,6 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.entity.user import PasswordResetToken, User, UserSession
 from src.services.auth import auth_service
@@ -23,13 +22,6 @@ def refresh_token() -> str:
 
     token = auth_service.create_refresh_token(payload={"sub": EMAIL})
     return token
-
-
-@pytest.fixture()
-def db_session_mock() -> AsyncMock:
-    """Return an async session mock for isolated AuthService unit tests."""
-
-    return AsyncMock(spec=AsyncSession)
 
 
 def test_create_hashed_password_returns_hashed_value() -> None:
@@ -759,7 +751,6 @@ async def test_get_current_user_return_user_data_when_user_is_authorized(
     access_token_with_jti: tuple[str, str],
     db_session_mock: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
-    user_factory,
 ) -> None:
     """Return the current user when the access token and session are valid."""
 
@@ -800,7 +791,14 @@ async def test_get_current_user_return_user_data_when_user_is_authorized(
     )
 
     # The user lookup must resolve the authenticated account by token subject.
-    user: User = await user_factory()
+    user = User(
+        id=1,
+        username="authorized_user",
+        email=email,
+        password="hashed-password",
+        confirmed=True,
+        blocked=False,
+    )
     repository_mock = AsyncMock(return_value=user)
     monkeypatch.setattr(
         "src.services.auth.repository_user.get_user_by_email",
