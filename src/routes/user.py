@@ -283,9 +283,15 @@ async def update_own_user_profile(
     if not file and not display_name:
         create_exception()
 
-    normalized_display_name = (
-        user_service.validate_display_name_value(display_name)
-    )
+    try:
+        normalized_display_name = (
+            user_service.validate_display_name_value(display_name)
+        )
+    except ValueError as err:
+        create_exception(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message=str(err),
+        )
 
     avatar_url = None
     if file is not None:
