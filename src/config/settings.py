@@ -72,9 +72,7 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str = "http://localhost:3000"
 
-    # TODO при деплої Значення має бути True.
-    # Встановити відповідне значення в env.
-    # Потрібно буде заначити в рідмі, що для локальної розробки False, а для проду True
+    # should be `false` locally and `true` in production
     COOKIE_SECURE: bool = False
 
     @computed_field

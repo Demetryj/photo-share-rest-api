@@ -25,7 +25,15 @@ async def lifespan(app: FastAPI):
     await token_blacklist_service.close()
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="Photo Share REST API (FastAPI)",
+    description=(
+        """REST API for photo sharing with authentication, user profiles,
+           comments, ratings, and photo transformations."""
+    ),
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 logger = logging.getLogger(__name__)
 
