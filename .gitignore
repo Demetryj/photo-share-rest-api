@@ -228,3 +228,7 @@ test.db-*
 # Personal notes
 notes.md
 NOTES.md
+tz.md
+
+*.doc
+*.docx
